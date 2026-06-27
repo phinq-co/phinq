@@ -1,0 +1,28 @@
+{
+  "name": "phinq-proxy",
+  "version": "0.5.0",
+  "description": "OpenRouter-compatible governance proxy for autonomous AI agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "tsx --test test/*.test.ts",
+    "replay": "tsx src/replay.ts",
+    "audit:verify": "tsx src/audit-verify.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "bin": {
+    "phinq": "dist/cli.js"
+  }
+}

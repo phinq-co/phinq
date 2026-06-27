@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# generated — synced from proxy/src/classifier.ts at build/test time (single source of truth)
+sdk/src/classifier.ts
+
+# runtime state — audit log, tool-call corpus, session/hold DBs, logs
+*.jsonl
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+
+# secrets / local config
+.env
+.env.local
+
+# macOS
+.DS_Store

@@ -1,0 +1,12 @@
+{
+  "name": "phinq-mastra-demo",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mastra/core": "latest",
+    "@ai-sdk/openai": "latest",
+    "zod": "^3.23.0",
+    "@phinq/governance": "file:../.."
+  },
+  "devDependencies": { "tsx": "^4.19.0" }
+}
