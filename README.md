@@ -53,7 +53,7 @@ OpenRouter, OpenAI (Codex, Agents SDK), Anthropic, Mastra, LangChain/LangGraph, 
 
 ## Related
 
-- **Advisory skill** (lighter, no infra): [github.com/hythamh12/phinq-governance](https://github.com/hythamh12/phinq-governance)
+- **Advisory skill** (lighter, no infra): [github.com/phinq-co/phinq-governance](https://github.com/phinq-co/phinq-governance)
 - **Hosted** (dashboards, anomaly detection, team approvals, compliance-grade audit): [phinq.co](https://www.phinq.co)
 
 ## License
