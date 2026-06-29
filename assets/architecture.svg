@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" fill="none">
+  <!-- Background -->
+  <rect width="800" height="520" fill="#0d1117" rx="8"/>
+  
+  <!-- Title -->
+  <text x="400" y="36" text-anchor="middle" fill="#e6edf3" font-family="system-ui, sans-serif" font-size="16" font-weight="600">Phinq Proxy Architecture</text>
+  
+  <!-- Agent box -->
+  <rect x="40" y="65" width="160" height="70" rx="8" fill="#1c2a3a" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="120" y="95" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="13" font-weight="600">AI Agent</text>
+  <text x="120" y="112" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="10">Codex · Claude Code</text>
+  <text x="120" y="126" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="10">OpenCode · Hermes</text>
+  
+  <!-- Arrow: Agent → Proxy -->
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker></defs>
+  <line x1="200" y1="100" x2="275" y2="100" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="237" y="92" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="9">base_url →</text>
+  
+  <!-- Proxy box (main) -->
+  <rect x="280" y="55" width="240" height="190" rx="8" fill="#0d4429" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="400" y="78" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="13" font-weight="600">Phinq Proxy</text>
+  <text x="400" y="92" text-anchor="middle" fill="#7ee787" font-family="monospace" font-size="9">port 5100 · Fastify · TypeScript</text>
+  
+  <!-- Classifier component -->
+  <rect x="300" y="105" width="200" height="40" rx="6" fill="#2ea043" stroke="#3fb950" stroke-width="1"/>
+  <text x="400" y="123" text-anchor="middle" fill="#fff" font-family="monospace" font-size="11" font-weight="600">Classifier Engine</text>
+  <text x="400" y="138" text-anchor="middle" fill="#7ee787" font-family="monospace" font-size="9">deterministic · regex + args inspection</text>
+  
+  <!-- Hold queue -->
+  <rect x="300" y="155" width="200" height="35" rx="6" fill="#d29922" stroke="#d29922" stroke-width="1"/>
+  <text x="400" y="173" text-anchor="middle" fill="#fff" font-family="monospace" font-size="11" font-weight="600">Hold Queue</text>
+  <text x="400" y="186" text-anchor="middle" fill="#ffd33d" font-family="monospace" font-size="9">SQLite-backed · 240s timeout</text>
+  
+  <!-- Arrow from classifier to hold -->
+  <line x1="400" y1="145" x2="400" y2="155" stroke="#d29922" stroke-width="1" marker-end="url(#arrow)"/>
+  
+  <!-- Telegram -->
+  <rect x="300" y="200" width="200" height="35" rx="6" fill="#1f6feb" stroke="#58a6ff" stroke-width="1"/>
+  <text x="400" y="218" text-anchor="middle" fill="#fff" font-family="monospace" font-size="11" font-weight="600">Telegram Notifier</text>
+  <text x="400" y="231" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="9">Approve / Deny via buttons</text>
+  
+  <!-- Arrow: Proxy → Telegram popup (simulated) -->
+  <line x1="520" y1="130" x2="590" y2="100" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  
+  <!-- Telegram popup -->
+  <rect x="595" y="65" width="170" height="70" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="680" y="85" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="8">🛑 HOLD: delete_file</text>
+  <text x="680" y="98" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="8">IRREVERSIBLE_MEDIUM</text>
+  <rect x="615" y="107" width="60" height="20" rx="4" fill="#2ea043"/>
+  <text x="645" y="121" text-anchor="middle" fill="#fff" font-family="monospace" font-size="9" font-weight="600">Approve</text>
+  <rect x="680" y="107" width="60" height="20" rx="4" fill="#da3633"/>
+  <text x="710" y="121" text-anchor="middle" fill="#fff" font-family="monospace" font-size="9" font-weight="600">Deny</text>
+  
+  <!-- Upstream box (inside proxy area) -->
+  <rect x="300" y="245" width="200" height="35" rx="6" fill="#21262d" stroke="#30363d" stroke-width="1"/>
+  <text x="400" y="263" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="11">Upstream Router</text>
+  <text x="400" y="276" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="9">OpenRouter · Anthropic</text>
+  
+  <!-- Arrow: Proxy → Upstream API -->
+  <line x1="520" y1="262" x2="590" y2="262" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrow)"/>
+  
+  <!-- Upstream API -->
+  <rect x="595" y="240" width="170" height="45" rx="8" fill="#3d1f00" stroke="#d29922" stroke-width="1.5"/>
+  <text x="680" y="260" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="12" font-weight="600">LLM Provider</text>
+  <text x="680" y="277" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="9">OpenAI · Anthropic · OpenRouter</text>
+  
+  <!-- Audit log box -->
+  <rect x="40" y="200" width="200" height="40" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="140" y="218" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="11" font-weight="600">📋 Audit Log (JSONL)</text>
+  <text x="140" y="234" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="9">hash-chained · tamper-evident</text>
+  
+  <!-- Arrow: Proxy → Audit -->
+  <path d="M 280 220 L 240 220" stroke="#30363d" stroke-width="1" marker-end="url(#arrow)" fill="none"/>
+  
+  <!-- ===== BOTTOM SECTION: Decision flow ===== -->
+  
+  <line x1="140" y1="280" x2="140" y2="310" stroke="#30363d" stroke-width="1" marker-end="url(#arrow)"/>
+  
+  <!-- ALLOW path -->
+  <rect x="40" y="315" width="200" height="35" rx="6" fill="#0d4429" stroke="#3fb950" stroke-width="1"/>
+  <text x="140" y="333" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">ALLOW</text>
+  <text x="140" y="346" text-anchor="middle" fill="#7ee787" font-family="monospace" font-size="9">REVERSIBLE · LOW → pass through</text>
+  
+  <!-- HOLD path -->
+  <rect x="40" y="360" width="200" height="35" rx="6" fill="#3d1f00" stroke="#d29922" stroke-width="1"/>
+  <text x="140" y="378" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="11" font-weight="600">HOLD</text>
+  <text x="140" y="391" text-anchor="middle" fill="#ffd33d" font-family="monospace" font-size="9">MEDIUM · HIGH → pause + ping</text>
+  
+  <!-- DENY path -->
+  <rect x="40" y="405" width="200" height="35" rx="6" fill="#490202" stroke="#da3633" stroke-width="1"/>
+  <text x="140" y="423" text-anchor="middle" fill="#da3633" font-family="monospace" font-size="11" font-weight="600">DENY</text>
+  <text x="140" y="436" text-anchor="middle" fill="#ff7b72" font-family="monospace" font-size="9">timeout · operator denied → synthetic denial</text>
+  
+  <!-- Arrow: ALLOW → flow line -->
+  <path d="M 300 332 L 300 390 L 240 390 L 240 387" stroke="#30363d" stroke-width="1" marker-end="url(#arrow)" fill="none" stroke-dasharray="3,2"/>
+  
+  <!-- Right side: labels -->
+  <text x="350" y="330" fill="#8b949e" font-family="monospace" font-size="9">5 risk classes: RISK_REDUCING · REVERSIBLE · IRREV_LOW · IRREV_MEDIUM · IRREV_HIGH</text>
+  <text x="350" y="348" fill="#8b949e" font-family="monospace" font-size="9">Structural triggers: BULK_DELETE · CREDENTIAL_ACCESS · COMMS_VOLUME</text>
+  <text x="350" y="366" fill="#8b949e" font-family="monospace" font-size="9">· PERMISSION_ESCALATION · BILLING · AFTER_ERROR · DISABLE_SAFEGUARDS</text>
+  
+  <!-- Footer -->
+  <text x="400" y="500" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="9">phinq.co · MIT License · Open Source</text>
+</svg>
