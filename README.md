@@ -1,3 +1,5 @@
+<p align="center"><img src=".github/logo.svg" width="76" alt="Phinq" /></p>
+
 # Phinq
 
 **The open-source governance layer for autonomous AI agents.** Know what your agent did. Stop it before it doesn't.
