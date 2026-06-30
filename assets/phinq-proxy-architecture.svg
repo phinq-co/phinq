@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 600" width="100%" font-family="system-ui" role="img" aria-label="Phinq architecture diagram: agent tool calls pass through a governance proxy that classifies, holds, and audits actions before reaching the LLM provider.">
+  <defs>
+    
+    <marker id="ar-t" markerWidth="11" markerHeight="11" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 Z" fill="#f0ede8"></path></marker>
+    <marker id="ar-g" markerWidth="11" markerHeight="11" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 Z" fill="#4ade80"></path></marker>
+    <marker id="ar-a" markerWidth="11" markerHeight="11" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 Z" fill="#fbbf24"></path></marker>
+    <marker id="ar-r" markerWidth="11" markerHeight="11" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 Z" fill="#f87171"></path></marker>
+  </defs>
+
+  
+  <rect x="0" y="0" width="1600" height="600" fill="#0a0a0a"></rect>
+
+  
+  <g transform="translate(40,20) scale(0.62)">
+    <path d="M11 56 V29 A21 21 0 0 1 53 29 V56" fill="none" stroke="#f0ede8" stroke-width="10" stroke-linecap="round"></path>
+    <circle cx="32" cy="41" r="7" fill="#f0ede8"></circle>
+  </g>
+  <text x="90" y="52" class="h" font-size="30" font-weight="700" fill="#f0ede8" letter-spacing="-0.5">phinq</text>
+  <text x="1560" y="44" text-anchor="end" class="m" font-size="14" fill="#888884">fig 1 · request lifecycle</text>
+
+  
+  <rect x="360" y="150" width="380" height="430" rx="16" fill="#141414" stroke="#2a2a28" stroke-width="1.5"></rect>
+  <g transform="translate(384,158) scale(0.42)">
+    <path d="M11 56 V29 A21 21 0 0 1 53 29 V56" fill="none" stroke="#f0ede8" stroke-width="10" stroke-linecap="round"></path>
+    <circle cx="32" cy="41" r="7" fill="#f0ede8"></circle>
+  </g>
+  <text x="416" y="184" class="h" font-size="20" font-weight="700" fill="#f0ede8">phinq proxy</text>
+  <text x="416" y="208" class="m" font-size="13" fill="#888884">governance layer</text>
+  <rect x="692" y="160" width="26" height="26" rx="7" fill="#1f1f1d" stroke="#2a2a28" stroke-width="1"></rect>
+  <text x="705" y="178" text-anchor="middle" class="m" font-size="14" fill="#f0ede8">2</text>
+
+  
+  <rect x="384" y="236" width="332" height="86" rx="12" fill="#0f0f0f" stroke="#2a2a28" stroke-width="1.5"></rect>
+  <text x="404" y="270" class="m" font-size="15" font-weight="500" fill="#f0ede8">classifier</text>
+  <text x="404" y="296" class="m" font-size="13" fill="#888884">inspect and classify the action</text>
+
+  
+  <rect x="384" y="346" width="332" height="86" rx="12" fill="#0f0f0f" stroke="#2a2a28" stroke-width="1.5"></rect>
+  <text x="404" y="380" class="m" font-size="15" font-weight="500" fill="#f0ede8">hold queue</text>
+  <text x="404" y="406" class="m" font-size="13" fill="#888884">hold high-risk actions for approval</text>
+
+  
+  <rect x="384" y="452" width="332" height="108" rx="12" fill="#0f0f0f" stroke="#2a2a28" stroke-width="1.5"></rect>
+  <text x="404" y="482" class="m" font-size="15" font-weight="500" fill="#f0ede8">audit log</text>
+  <text x="404" y="506" class="m" font-size="13" fill="#888884">tamper-evident hash-chained log</text>
+  <g>
+    <rect x="404" y="524" width="18" height="18" rx="4" fill="#141414" stroke="#2a2a28" stroke-width="1.2"></rect>
+    <line x1="422" y1="533" x2="434" y2="533" stroke="#888884" stroke-width="1.5"></line>
+    <rect x="434" y="524" width="18" height="18" rx="4" fill="#141414" stroke="#2a2a28" stroke-width="1.2"></rect>
+    <line x1="452" y1="533" x2="464" y2="533" stroke="#888884" stroke-width="1.5"></line>
+    <rect x="464" y="524" width="18" height="18" rx="4" fill="#141414" stroke="#2a2a28" stroke-width="1.2"></rect>
+    <line x1="482" y1="533" x2="494" y2="533" stroke="#888884" stroke-width="1.5"></line>
+    <rect x="494" y="524" width="18" height="18" rx="4" fill="#141414" stroke="#2a2a28" stroke-width="1.2"></rect>
+    <line x1="512" y1="533" x2="524" y2="533" stroke="#888884" stroke-width="1.5"></line>
+    <rect x="524" y="524" width="18" height="18" rx="4" fill="#141414" stroke="#2a2a28" stroke-width="1.2"></rect>
+    <text x="552" y="539" class="m" font-size="15" fill="#888884">…</text>
+  </g>
+
+  
+  <line x1="550" y1="322" x2="550" y2="346" stroke="#f0ede8" stroke-width="2" marker-end="url(#ar-t)"></line>
+  <line x1="550" y1="432" x2="550" y2="452" stroke="#f0ede8" stroke-width="2" marker-end="url(#ar-t)"></line>
+
+  
+  <rect x="40" y="250" width="270" height="200" rx="16" fill="#141414" stroke="#2a2a28" stroke-width="1.5"></rect>
+  <rect x="64" y="272" width="26" height="26" rx="7" fill="#1f1f1d" stroke="#2a2a28" stroke-width="1"></rect>
+  <text x="77" y="290" text-anchor="middle" class="m" font-size="14" fill="#f0ede8">1</text>
+  <text x="102" y="291" class="h" font-size="22" font-weight="700" fill="#f0ede8">Agent</text>
+  <text x="64" y="324" class="m" font-size="13" fill="#888884">autonomous AI agent</text>
+  <rect x="64" y="338" width="222" height="40" rx="9" fill="#0f0f0f" stroke="#2a2a28" stroke-width="1.5"></rect>
+  <text x="80" y="363" class="m" font-size="15" fill="#f0ede8">delete_file(path=…)</text>
+  <rect x="64" y="392" width="124" height="26" rx="13" fill="none" stroke="#fbbf24" stroke-width="1.3"></rect>
+  <circle cx="80" cy="405" r="3" fill="#fbbf24"></circle>
+  <text x="92" y="409" class="m" font-size="12.5" fill="#fbbf24">irreversible</text>
+
+  
+  <rect x="980" y="56" width="360" height="168" rx="16" fill="#141414" stroke="#2a2a28" stroke-width="1.5"></rect>
+  <rect x="1004" y="80" width="26" height="26" rx="7" fill="#1f1f1d" stroke="#2a2a28" stroke-width="1"></rect>
+  <text x="1017" y="98" text-anchor="middle" class="m" font-size="14" fill="#f0ede8">3</text>
+  <text x="1042" y="100" class="h" font-size="22" font-weight="700" fill="#f0ede8">Human operator</text>
+  <text x="1004" y="132" class="m" font-size="13" fill="#888884">review and decide · Telegram or CLI</text>
+  <rect x="1004" y="162" width="150" height="40" rx="9" fill="none" stroke="#f87171" stroke-width="1.4"></rect>
+  <text x="1079" y="187" text-anchor="middle" class="m" font-size="14" fill="#f87171">deny ✕</text>
+  <rect x="1170" y="162" width="150" height="40" rx="9" fill="none" stroke="#4ade80" stroke-width="1.4"></rect>
+  <text x="1245" y="187" text-anchor="middle" class="m" font-size="14" fill="#4ade80">approve ✓</text>
+
+  
+  <rect x="920" y="250" width="220" height="42" rx="10" fill="#141414" stroke="#f87171" stroke-width="1.3" stroke-opacity="0.6"></rect>
+  <text x="1030" y="276" text-anchor="middle" class="m" font-size="13" fill="#f87171" fill-opacity="0.9">blocked — not executed</text>
+
+  
+  <rect x="1240" y="330" width="320" height="150" rx="16" fill="#141414" stroke="#2a2a28" stroke-width="1.5"></rect>
+  <rect x="1264" y="354" width="26" height="26" rx="7" fill="#1f1f1d" stroke="#2a2a28" stroke-width="1"></rect>
+  <text x="1277" y="372" text-anchor="middle" class="m" font-size="14" fill="#f0ede8">4</text>
+  <text x="1302" y="374" class="h" font-size="22" font-weight="700" fill="#f0ede8">LLM provider</text>
+  <text x="1264" y="408" class="m" font-size="14" fill="#888884">OpenAI / Anthropic</text>
+  <text x="1264" y="436" class="m" font-size="12.5" fill="#888884" fill-opacity="0.8">executes the request</text>
+
+  
+  <line x1="310" y1="350" x2="360" y2="350" stroke="#f0ede8" stroke-width="2" marker-end="url(#ar-t)"></line>
+
+  
+  <path d="M740,290 H860 V140 H980" fill="none" stroke="#fbbf24" stroke-width="2" marker-end="url(#ar-a)"></path>
+
+  
+  <line x1="740" y1="405" x2="1240" y2="405" stroke="#4ade80" stroke-width="2" marker-end="url(#ar-g)"></line>
+
+  
+  <path d="M1245,224 V300 H1400 V330" fill="none" stroke="#4ade80" stroke-width="2" stroke-dasharray="7 6" marker-end="url(#ar-g)"></path>
+
+  
+  <line x1="1030" y1="224" x2="1030" y2="250" stroke="#f87171" stroke-width="2" marker-end="url(#ar-r)"></line>
+
+  
+  <rect x="744" y="184" width="234" height="22" fill="#0a0a0a"></rect>
+  <text x="861" y="200" text-anchor="middle" class="m" font-size="12.5" fill="#fbbf24">hold · irreversible / high risk</text>
+
+  <rect x="880" y="394" width="216" height="22" fill="#0a0a0a"></rect>
+  <text x="988" y="410" text-anchor="middle" class="m" font-size="13" fill="#4ade80">allow · reversible / low risk</text>
+
+  <rect x="1171" y="250" width="148" height="22" fill="#0a0a0a"></rect>
+  <text x="1245" y="266" text-anchor="middle" class="m" font-size="13" fill="#4ade80">if approved, continue</text>
+
+</svg>

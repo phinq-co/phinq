@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/architecture.png" width="100%" alt="Phinq Architecture"/>
+  <img src="assets/phinq-proxy-architecture.svg" width="100%" alt="Phinq Architecture"/>
 </p>
 
 <h1 align="center">Phinq</h1>
