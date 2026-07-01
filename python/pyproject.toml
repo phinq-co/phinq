@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "phinq"
+version = "0.1.0"
+description = "The runtime checkpoint for AI agents — deterministic tool-call risk classification, human-in-the-loop gating, and audit hooks."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Phinq", email = "noreply@phinq.co" }]
+keywords = ["ai-agents", "governance", "guardrails", "human-in-the-loop", "llm", "safety"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://www.phinq.co"
+Repository = "https://github.com/phinq-co/phinq"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/phinq"]
