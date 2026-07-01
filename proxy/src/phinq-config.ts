@@ -14,6 +14,7 @@ import { DEFAULT_WINDOWS, type SessionWindows } from "./session.js";
  *   thresholds:
  *     external_comm_volume: 3      # sends per session window before HOLD
  *     bulk_delete_count: 5         # deletes per window / items per call
+ *     session_token_budget: 500000 # tokens per window before HOLD (0/absent = off)
  *   session:
  *     window_minutes: 60
  *     error_window_minutes: 10
@@ -74,6 +75,8 @@ export function loadPhinqRules(
       n(thresholds.external_comm_volume) ?? out.rules.thresholds.externalCommVolume;
     out.rules.thresholds.bulkDeleteCount =
       n(thresholds.bulk_delete_count) ?? out.rules.thresholds.bulkDeleteCount;
+    out.rules.thresholds.sessionTokenBudget =
+      n(thresholds.session_token_budget) ?? out.rules.thresholds.sessionTokenBudget;
   }
 
   const session = d.session as Record<string, unknown> | undefined;

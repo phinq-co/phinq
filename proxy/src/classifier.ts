@@ -42,7 +42,8 @@ export type StructuralTrigger =
   | "EXTERNAL_COMM_VOLUME"
   | "PERMISSION_ESCALATION"
   | "BILLING_MODIFICATION"
-  | "AFTER_ERROR_BULK";
+  | "AFTER_ERROR_BULK"
+  | "TOKEN_BUDGET";
 
 export type Decision = "ALLOW" | "HOLD";
 
@@ -54,6 +55,8 @@ export interface SessionCounts {
   deletes: number;
   /** Whether an error occurred in this session within the error window. */
   recentError: boolean;
+  /** Tokens consumed in the window before this call (usage-block accounting). */
+  windowTokens?: number;
 }
 
 export interface ClassifierThresholds {
@@ -61,11 +64,18 @@ export interface ClassifierThresholds {
   externalCommVolume: number;
   /** BULK_DELETE fires when deletes (or items in one call) exceed this. Default 5. */
   bulkDeleteCount: number;
+  /**
+   * TOKEN_BUDGET fires when session token use exceeds this. 0 disables
+   * (default) — token regulation is opt-in so routine sessions never
+   * false-HOLD.
+   */
+  sessionTokenBudget: number;
 }
 
 export const DEFAULT_THRESHOLDS: ClassifierThresholds = {
   externalCommVolume: 3,
   bulkDeleteCount: 5,
+  sessionTokenBudget: 0,
 };
 
 export interface ClassifierRules {
@@ -370,6 +380,16 @@ export function classifyToolCall(
     triggers.add("BULK_DELETE");
     reasons.push(
       `session delete count ${session.deletes + 1} exceeds ${rules.thresholds.bulkDeleteCount}`
+    );
+  }
+  if (
+    rules.thresholds.sessionTokenBudget > 0 &&
+    (session.windowTokens ?? 0) > rules.thresholds.sessionTokenBudget
+  ) {
+    cls = AgentActionClass.IRREVERSIBLE_HIGH;
+    triggers.add("TOKEN_BUDGET");
+    reasons.push(
+      `session token use ${session.windowTokens} exceeds budget ${rules.thresholds.sessionTokenBudget}`
     );
   }
   if (

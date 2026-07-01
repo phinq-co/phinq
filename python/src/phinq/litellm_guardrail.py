@@ -43,6 +43,23 @@ class PhinqHoldError(ValueError):
     """Raised when enforcement is on and a proposed tool call classifies HOLD."""
 
 
+def _usage_tokens_from_response(response: Any) -> int:
+    """Total tokens from a response usage block (OpenAI or Anthropic field names)."""
+    usage = getattr(response, "usage", None)
+    if usage is None and isinstance(response, dict):
+        usage = response.get("usage")
+    if usage is None:
+        return 0
+    get = (lambda k: getattr(usage, k, None)) if not isinstance(usage, dict) else usage.get
+    num = lambda v: v if isinstance(v, (int, float)) and v > 0 else 0
+    total = num(get("total_tokens"))
+    if not total:
+        total = (num(get("prompt_tokens")) or num(get("input_tokens"))) + (
+            num(get("completion_tokens")) or num(get("output_tokens"))
+        )
+    return int(total)
+
+
 def _tool_calls_from_response(response: Any) -> list[tuple[str, str | None]]:
     """Extract (name, arguments_json) pairs from a LiteLLM ModelResponse or dict."""
     out: list[tuple[str, str | None]] = []
@@ -93,6 +110,9 @@ class PhinqGuardrail(_Base):  # type: ignore[misc,valid-type]
     def check_response(self, response: Any, session_key: str = "default") -> list[dict[str, Any]]:
         """Classify every proposed tool call; return the HOLD verdicts."""
         holds: list[dict[str, Any]] = []
+        tokens = _usage_tokens_from_response(response)
+        if tokens:
+            self.sessions.record_tokens(session_key, tokens)
         for name, args_json in _tool_calls_from_response(response):
             c = classify_tool_call(name, args_json, self.sessions.counts(session_key), self.rules)
             kind = session_event_kind(name)

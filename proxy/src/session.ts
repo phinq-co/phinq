@@ -49,6 +49,13 @@ export class SessionStore {
       );
       CREATE INDEX IF NOT EXISTS idx_session_events
         ON session_events (session_key, kind, ts);
+      CREATE TABLE IF NOT EXISTS session_tokens (
+        session_key TEXT NOT NULL,
+        ts INTEGER NOT NULL,
+        tokens INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_tokens
+        ON session_tokens (session_key, ts);
     `);
   }
 
@@ -58,9 +65,20 @@ export class SessionStore {
       .run(sessionKey, kind, now);
   }
 
+  /** Token usage from a response's usage block — fuel-gauge accounting. */
+  recordTokens(sessionKey: string, tokens: number, now = Date.now()): void {
+    if (!Number.isFinite(tokens) || tokens <= 0) return;
+    this.db
+      .prepare("INSERT INTO session_tokens (session_key, ts, tokens) VALUES (?, ?, ?)")
+      .run(sessionKey, now, Math.floor(tokens));
+  }
+
   /** Counts within the rolling windows, excluding nothing — callers add the
    *  in-flight call themselves (the classifier takes "counts before this call"). */
-  counts(sessionKey: string, now = Date.now()): { sends: number; deletes: number; recentError: boolean } {
+  counts(
+    sessionKey: string,
+    now = Date.now()
+  ): { sends: number; deletes: number; recentError: boolean; windowTokens: number } {
     const since = now - this.windows.windowMinutes * 60_000;
     const errorSince = now - this.windows.errorWindowMinutes * 60_000;
     const count = (kind: string, after: number): number => {
@@ -71,10 +89,16 @@ export class SessionStore {
         .get(sessionKey, kind, after) as { n: number };
       return row.n;
     };
+    const tokensRow = this.db
+      .prepare(
+        "SELECT COALESCE(SUM(tokens), 0) AS n FROM session_tokens WHERE session_key = ? AND ts > ?"
+      )
+      .get(sessionKey, since) as { n: number };
     return {
       sends: count("send", since),
       deletes: count("delete", since),
       recentError: count("error", errorSince) > 0,
+      windowTokens: tokensRow.n,
     };
   }
 
@@ -83,6 +107,7 @@ export class SessionStore {
     const horizon =
       now - Math.max(this.windows.windowMinutes, this.windows.errorWindowMinutes) * 60_000;
     this.db.prepare("DELETE FROM session_events WHERE ts <= ?").run(horizon);
+    this.db.prepare("DELETE FROM session_tokens WHERE ts <= ?").run(horizon);
   }
 
   close(): void {

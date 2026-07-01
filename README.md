@@ -53,6 +53,7 @@ Timeout (240s) → auto-deny
 - **Holds high-risk actions for a human** — approve or deny from your phone, the CLI, or a programmatic handler; auto-denies on timeout.
 - **Tamper-evident audit log** — hash-chained (RFC 8785 JCS, SHA-256). Editing, reordering, or deleting any entry is detectable.
 - **Velocity awareness** — catches "the swarm sent 50 emails" or "300 calls in two minutes" via rolling-window triggers.
+- **Token regulation** — reads every response's `usage` block; a session that burns past your token budget gets checkpointed until a human waves it on, and all spend lands in the audit report.
 
 ## Quick start — proxy
 
@@ -170,6 +171,7 @@ Every tool call is classified into one of five levels:
 - `BILLING_MODIFICATION` — payment, subscription changes
 - `AFTER_ERROR_BULK` — bulk ops within 10 min of an error
 - `DISABLE_SAFEGUARDS` — modifying the governance layer itself
+- `TOKEN_BUDGET` — session token burn exceeds your budget (opt-in)
 
 Tune thresholds via `phinq.yaml`:
 
@@ -177,11 +179,16 @@ Tune thresholds via `phinq.yaml`:
 thresholds:
   external_comm_volume: 3
   bulk_delete_count: 5
+  session_token_budget: 500000  # tokens per session window; 0/absent = off
 session:
   window_minutes: 60
 tools:
   send_newsletter: REVERSIBLE   # override a tool's default class
 ```
+
+### Token regulation — the fuel gauge
+
+The proxy reads the `usage` block of every response (all three dialects) and keeps a rolling per-session token count. Set `session_token_budget` and a session that burns past it gets **checkpointed**: every subsequent tool call holds for approval until you wave it on — a runaway loop can't quietly spend all night. Usage is also written to the audit chain and totalled (per model) in `phinq report`. Off by default, so routine sessions never false-HOLD.
 
 ## Audit log (tamper-evident)
 

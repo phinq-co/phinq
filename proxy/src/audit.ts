@@ -79,6 +79,18 @@ export interface DecisionEntry {
   args_bytes?: number;
 }
 
+/** Per-response token usage — the fuel gauge behind TOKEN_BUDGET. */
+export interface UsageEntry {
+  type: "usage";
+  ts: string;
+  model?: string;
+  /** First 12 hex chars of the session key hash — correlation, not identity. */
+  session?: string;
+  tokens_prompt: number;
+  tokens_completion: number;
+  tokens_total: number;
+}
+
 /** Every hold state transition, including creation. */
 export interface HoldEntry {
   type: "hold_transition";
@@ -88,7 +100,7 @@ export interface HoldEntry {
   decided_by?: string;
 }
 
-export type AuditEntry = (GenesisEntry | DecisionEntry | HoldEntry) & Record<string, unknown>;
+export type AuditEntry = (GenesisEntry | DecisionEntry | HoldEntry | UsageEntry) & Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
 // Writer

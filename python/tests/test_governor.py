@@ -92,3 +92,25 @@ def test_session_key_is_hash():
     k = session_key_from("sk-secret-api-key")
     assert len(k) == 64
     assert "secret" not in k
+
+
+def test_token_accounting_in_session_store():
+    store = MemorySessionStore(SessionWindows(window_minutes=60, error_window_minutes=10))
+    now = 1_000_000.0
+    store.record_tokens("k", 1200, now)
+    store.record_tokens("k", 800, now + 60)
+    assert store.counts("k", now + 120).window_tokens == 2000
+    assert store.counts("k", now + 61 * 60).window_tokens == 800
+    store.record_tokens("k", -5, now)  # ignored
+    assert store.counts("other", now).window_tokens == 0
+
+
+def test_token_budget_gates_via_governor():
+    from phinq import ClassifierRules, ClassifierThresholds, PhinqGovernor
+
+    g = PhinqGovernor(rules=ClassifierRules(thresholds=ClassifierThresholds(session_token_budget=1000)))
+    assert g.gate("read_file", {"path": "x"}).allowed is True
+    g.sessions.record_tokens("default", 5000)
+    r = g.gate("read_file", {"path": "x"})
+    assert r.allowed is False
+    assert "TOKEN_BUDGET" in r.classification.triggers

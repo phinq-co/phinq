@@ -15,6 +15,7 @@ export const DEFAULT_WINDOWS: SessionWindows = {
 };
 
 type EventKind = "send" | "delete" | "error";
+type TokenEvent = { tokens: number; ts: number };
 
 /**
  * In-memory rolling-window counters, keyed by session. The proxy persists these
@@ -27,6 +28,7 @@ type EventKind = "send" | "delete" | "error";
  */
 export class MemorySessionStore {
   private readonly events = new Map<string, { kind: EventKind; ts: number }[]>();
+  private readonly tokens = new Map<string, TokenEvent[]>();
 
   constructor(private readonly windows: SessionWindows = DEFAULT_WINDOWS) {}
 
@@ -34,6 +36,15 @@ export class MemorySessionStore {
     const list = this.events.get(key) ?? [];
     list.push({ kind, ts: now });
     this.events.set(key, list);
+    this.prune(key, now);
+  }
+
+  /** Token usage from a response's usage block — fuel-gauge accounting. */
+  recordTokens(key: string, tokens: number, now: number = Date.now()): void {
+    if (!Number.isFinite(tokens) || tokens <= 0) return;
+    const list = this.tokens.get(key) ?? [];
+    list.push({ tokens: Math.floor(tokens), ts: now });
+    this.tokens.set(key, list);
     this.prune(key, now);
   }
 
@@ -50,7 +61,11 @@ export class MemorySessionStore {
       else if (e.kind === "delete" && e.ts >= windowStart) deletes++;
       else if (e.kind === "error" && e.ts >= errorStart) recentError = true;
     }
-    return { sends, deletes, recentError };
+    let windowTokens = 0;
+    for (const t of this.tokens.get(key) ?? []) {
+      if (t.ts >= windowStart) windowTokens += t.tokens;
+    }
+    return { sends, deletes, recentError, windowTokens };
   }
 
   private prune(key: string, now: number): void {
@@ -61,6 +76,12 @@ export class MemorySessionStore {
     const kept = list.filter((e) => e.ts >= cutoff);
     if (kept.length) this.events.set(key, kept);
     else this.events.delete(key);
+    const tokenList = this.tokens.get(key);
+    if (tokenList) {
+      const keptTokens = tokenList.filter((e) => e.ts >= cutoff);
+      if (keptTokens.length) this.tokens.set(key, keptTokens);
+      else this.tokens.delete(key);
+    }
   }
 }
 

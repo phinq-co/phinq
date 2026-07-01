@@ -48,6 +48,59 @@ interface Governance {
   enforcing: boolean;
 }
 
+
+/**
+ * Token regulation (fuel gauge): pull total tokens from a response's usage
+ * block, across all three dialects — OpenAI chat (prompt_/completion_tokens),
+ * Responses + Anthropic (input_/output_tokens).
+ */
+export function extractUsageTokens(response: unknown): {
+  prompt: number;
+  completion: number;
+  total: number;
+} | null {
+  if (typeof response !== "object" || response === null) return null;
+  const usage = (response as Record<string, unknown>).usage;
+  if (typeof usage !== "object" || usage === null) return null;
+  const u = usage as Record<string, unknown>;
+  const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  const prompt = num(u.prompt_tokens) || num(u.input_tokens);
+  const completion = num(u.completion_tokens) || num(u.output_tokens);
+  const total = num(u.total_tokens) || prompt + completion;
+  return total > 0 ? { prompt, completion, total } : null;
+}
+
+
+/** Record a response's token usage: session fuel gauge + one audit entry. */
+function recordUsage(
+  governance: Governance,
+  sessionKey: string,
+  response: unknown,
+  requestModel: string | undefined
+): void {
+  try {
+    const tokens = extractUsageTokens(response);
+    if (!tokens) return;
+    governance.sessions.recordTokens(sessionKey, tokens.total);
+    governance.audit?.append({
+      type: "usage",
+      ts: new Date().toISOString(),
+      model:
+        (typeof response === "object" &&
+        response !== null &&
+        typeof (response as Record<string, unknown>).model === "string"
+          ? ((response as Record<string, unknown>).model as string)
+          : undefined) ?? requestModel,
+      session: sessionKey.slice(0, 12),
+      tokens_prompt: tokens.prompt,
+      tokens_completion: tokens.completion,
+      tokens_total: tokens.total,
+    });
+  } catch {
+    /* fuel-gauge bookkeeping is fail-open */
+  }
+}
+
 export function buildServer(config: ProxyConfig): FastifyInstance {
   const app = Fastify({
     logger: {
@@ -324,6 +377,7 @@ async function governedChatCompletions(
   let calls: ObservedToolCall[] = [];
   try {
     const response = JSON.parse(result.body.toString("utf8"));
+    recordUsage(governance, sessionKey, response, requestModel);
     calls = extractToolCalls(response, requestModel);
     if (calls.length > 0) {
       // Counts are read once and incremented in-memory so multiple calls in
@@ -494,6 +548,7 @@ async function governedResponses(
   try {
     const ct = String(result.headers["content-type"] ?? "");
     const responseObj = parseResponsesBody(result.body.toString("utf8"), ct);
+    recordUsage(governance, sessionKey, responseObj, requestModel);
     calls = extractResponsesToolCalls(responseObj, requestModel, (t) =>
       req.log.warn({ output_item_type: t }, "unmodeled responses tool-call type")
     );
@@ -661,6 +716,7 @@ async function governedMessages(
   try {
     const ct = String(result.headers["content-type"] ?? "");
     const message = parseMessagesBody(result.body.toString("utf8"), ct);
+    recordUsage(governance, sessionKey, message, requestModel);
     calls = extractMessagesToolCalls(message, requestModel);
     if (calls.length > 0) {
       const counts = governance.sessions.counts(sessionKey);

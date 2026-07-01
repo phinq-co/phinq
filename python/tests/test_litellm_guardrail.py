@@ -84,3 +84,15 @@ def test_mixed_calls_reports_only_holds():
     )
     holds = g.check_response(resp)
     assert [h["tool"] for h in holds] == ["update_subscription"]
+
+
+def test_token_budget_enforced_via_guardrail():
+    from phinq import ClassifierRules, ClassifierThresholds
+
+    g = PhinqGuardrail(rules=ClassifierRules(thresholds=ClassifierThresholds(session_token_budget=8000)))
+    resp = response_with_tool_calls(("read_file", {"path": "x"}))
+    resp["usage"] = {"prompt_tokens": 5000, "completion_tokens": 100, "total_tokens": 5100}
+    assert g.check_response(resp) == []  # 5,100 tokens — under budget
+    holds = g.check_response(resp)       # 10,200 — over budget: even safe calls hold
+    assert len(holds) == 1
+    assert "TOKEN_BUDGET" in holds[0]["triggers"]

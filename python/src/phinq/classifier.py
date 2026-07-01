@@ -57,12 +57,15 @@ class SessionCounts:
     sends: int = 0
     deletes: int = 0
     recent_error: bool = False
+    window_tokens: int = 0
 
 
 @dataclass
 class ClassifierThresholds:
     external_comm_volume: int = 3
     bulk_delete_count: int = 5
+    # TOKEN_BUDGET fires when session token use exceeds this. 0 disables (default).
+    session_token_budget: int = 0
 
 
 @dataclass
@@ -339,6 +342,15 @@ def classify_tool_call(
         add_trigger("BULK_DELETE")
         reasons.append(
             f"session delete count {session.deletes + 1} exceeds {rules.thresholds.bulk_delete_count}"
+        )
+    if (
+        rules.thresholds.session_token_budget > 0
+        and session.window_tokens > rules.thresholds.session_token_budget
+    ):
+        cls = AgentActionClass.IRREVERSIBLE_HIGH
+        add_trigger("TOKEN_BUDGET")
+        reasons.append(
+            f"session token use {session.window_tokens} exceeds budget {rules.thresholds.session_token_budget}"
         )
     if session.recent_error and ("BULK_DELETE" in triggers or "EXTERNAL_COMM_VOLUME" in triggers):
         add_trigger("AFTER_ERROR_BULK")

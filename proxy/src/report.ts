@@ -53,6 +53,13 @@ export interface OversightReport {
     pending: number;
     human_decided: number;
   };
+  usage: {
+    responses: number;
+    tokens_prompt: number;
+    tokens_completion: number;
+    tokens_total: number;
+    by_model: Record<string, number>;
+  };
   assessments: {
     total: number;
     true_positive: number;
@@ -87,6 +94,10 @@ export function buildReport(
     holds: {
       total: 0, approved: 0, denied: 0, expired_timeout: 0,
       expired_client: 0, pending: 0, human_decided: 0,
+    },
+    usage: {
+      responses: 0, tokens_prompt: 0, tokens_completion: 0, tokens_total: 0,
+      by_model: {},
     },
     assessments: {
       total: 0, true_positive: 0, false_positive: 0, unclear: 0,
@@ -125,6 +136,19 @@ export function buildReport(
               status: e.status,
               decided_by: typeof e.decided_by === "string" ? e.decided_by : prev?.decided_by,
             });
+          }
+        }
+        break;
+      }
+      case "usage": {
+        const u = report.usage;
+        u.responses++;
+        if (typeof e.tokens_prompt === "number") u.tokens_prompt += e.tokens_prompt;
+        if (typeof e.tokens_completion === "number") u.tokens_completion += e.tokens_completion;
+        if (typeof e.tokens_total === "number") {
+          u.tokens_total += e.tokens_total;
+          if (typeof e.model === "string") {
+            u.by_model[e.model] = (u.by_model[e.model] ?? 0) + e.tokens_total;
           }
         }
         break;
@@ -208,6 +232,20 @@ export function renderMarkdown(r: OversightReport, hash: string): string {
     lines.push(`| Structural trigger | Fired |`, `|---|---|`);
     for (const [k, v] of trig) lines.push(`| ${k} | ${v} |`);
     lines.push(``);
+  }
+  if (r.usage.responses > 0) {
+    lines.push(
+      `## Token usage — the fuel gauge`,
+      ``,
+      `${r.usage.tokens_total.toLocaleString("en-GB")} tokens across ${r.usage.responses} responses (${r.usage.tokens_prompt.toLocaleString("en-GB")} prompt / ${r.usage.tokens_completion.toLocaleString("en-GB")} completion).`,
+      ``
+    );
+    const models = topN(r.usage.by_model, 10);
+    if (models.length) {
+      lines.push(`| Model | Tokens |`, `|---|---|`);
+      for (const [k, v] of models) lines.push(`| ${k} | ${v.toLocaleString("en-GB")} |`);
+      lines.push(``);
+    }
   }
   lines.push(
     `## Holds — human-in-the-loop outcomes`,

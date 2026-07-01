@@ -48,10 +48,19 @@ class MemorySessionStore:
     def __init__(self, windows: SessionWindows | None = None) -> None:
         self.windows = windows or SessionWindows()
         self._events: dict[str, list[tuple[str, float]]] = {}
+        self._tokens: dict[str, list[tuple[int, float]]] = {}
 
     def record(self, key: str, kind: str, now: float | None = None) -> None:
         now = time.time() if now is None else now
         self._events.setdefault(key, []).append((kind, now))
+        self._prune(key, now)
+
+    def record_tokens(self, key: str, tokens: int, now: float | None = None) -> None:
+        """Token usage from a response's usage block — fuel-gauge accounting."""
+        if tokens <= 0:
+            return
+        now = time.time() if now is None else now
+        self._tokens.setdefault(key, []).append((int(tokens), now))
         self._prune(key, now)
 
     def counts(self, key: str, now: float | None = None) -> SessionCounts:
@@ -68,7 +77,12 @@ class MemorySessionStore:
                 deletes += 1
             elif kind == "error" and ts >= error_start:
                 recent_error = True
-        return SessionCounts(sends=sends, deletes=deletes, recent_error=recent_error)
+        window_tokens = sum(
+            n for n, ts in self._tokens.get(key, []) if ts >= window_start
+        )
+        return SessionCounts(
+            sends=sends, deletes=deletes, recent_error=recent_error, window_tokens=window_tokens
+        )
 
     def _prune(self, key: str, now: float) -> None:
         longest = max(self.windows.window_minutes, self.windows.error_window_minutes)
@@ -78,6 +92,11 @@ class MemorySessionStore:
             self._events[key] = kept
         else:
             self._events.pop(key, None)
+        kept_tokens = [(n, t) for n, t in self._tokens.get(key, []) if t >= cutoff]
+        if kept_tokens:
+            self._tokens[key] = kept_tokens
+        else:
+            self._tokens.pop(key, None)
 
 
 def session_key_from(identifier: str) -> str:

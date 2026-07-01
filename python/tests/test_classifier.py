@@ -155,3 +155,19 @@ def test_default_thresholds_match_skill_spec():
     t = ClassifierThresholds()
     assert t.external_comm_volume == 3
     assert t.bulk_delete_count == 5
+
+
+def test_token_budget_off_by_default():
+    c = classify("read_file", {"path": "x"}, SessionCounts(window_tokens=10_000_000))
+    assert c.decision == "ALLOW"
+    assert "TOKEN_BUDGET" not in c.triggers
+
+
+def test_token_budget_trips_when_exceeded():
+    rules = ClassifierRules(thresholds=ClassifierThresholds(session_token_budget=100_000))
+    under = classify("read_file", None, SessionCounts(window_tokens=99_999), rules)
+    assert under.decision == "ALLOW"
+    over = classify("read_file", None, SessionCounts(window_tokens=100_001), rules)
+    assert over.decision == "HOLD"
+    assert "TOKEN_BUDGET" in over.triggers
+    assert over.action_class == AgentActionClass.IRREVERSIBLE_HIGH
