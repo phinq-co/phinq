@@ -195,6 +195,8 @@ Useful as standing evidence of human oversight over an autonomous system — e.g
 
 OpenRouter, OpenAI (Codex, Agents SDK), Anthropic, Mastra, LangChain/LangGraph, Vercel AI SDK, CrewAI, AutoGen, Pydantic AI, LlamaIndex, Hugging Face, and any runtime that speaks the OpenAI or Anthropic APIs with a configurable base URL.
 
+Already running **LiteLLM**? Chain the proxies or drop in the Phinq guardrail — see [docs/litellm.md](docs/litellm.md). Python-side gating is `pip install phinq` ([python/](python/)).
+
 *(Compatibility, not affiliation — trademarks belong to their owners.)*
 
 ## Related
