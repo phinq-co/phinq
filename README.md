@@ -5,8 +5,8 @@
 <h1 align="center">Phinq</h1>
 
 <p align="center">
-  <b>The open-source governance layer for autonomous AI agents.</b><br/>
-  Know what your agent did. Stop it before it doesn't.
+  <b>The open-source runtime checkpoint for AI agents.</b><br/>
+  Inspect every tool call. Hold the irreversible for approval. Keep verifiable evidence of human oversight.
 </p>
 
 <p align="center">
