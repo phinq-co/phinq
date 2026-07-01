@@ -7,6 +7,7 @@
  *   phinq deny <id>             return a synthetic denial to the agent
  *   phinq watch                 live-list pending holds (poll every 2s)
  *   phinq audit verify [file]   verify the audit hash chain
+ *   phinq learn [file] [--apply] propose policy from operator precedent
  *
  * Talks to the running proxy's localhost control API. Auth is the per-install
  * secret stored in the hold SQLite DB — readable only by a process with
@@ -21,6 +22,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { verifyFile } from "./audit.js";
+import { runLearn } from "./learn.js";
 
 // Find the running instance: explicit env wins, else the pointer the proxy
 // drops at ~/.phinq/instance.json, else built-in defaults.
@@ -120,6 +122,10 @@ async function main(): Promise<void> {
         printHolds(holds);
         await new Promise((r) => setTimeout(r, 2000));
       }
+    }
+    case "learn": {
+      process.exit(await runLearn(process.argv.slice(3)));
+      break;
     }
     case "audit": {
       if (arg !== "verify") fail("usage: phinq audit verify [file]");

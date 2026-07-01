@@ -60,6 +60,10 @@ export interface OversightReport {
     tokens_total: number;
     by_model: Record<string, number>;
   };
+  policy: {
+    changes: number;
+    last_change_ts?: string;
+  };
   assessments: {
     total: number;
     true_positive: number;
@@ -99,6 +103,7 @@ export function buildReport(
       responses: 0, tokens_prompt: 0, tokens_completion: 0, tokens_total: 0,
       by_model: {},
     },
+    policy: { changes: 0 },
     assessments: {
       total: 0, true_positive: 0, false_positive: 0, unclear: 0,
       false_hold_rate: null, estimated_damage_prevented_gbp: 0,
@@ -151,6 +156,11 @@ export function buildReport(
             u.by_model[e.model] = (u.by_model[e.model] ?? 0) + e.tokens_total;
           }
         }
+        break;
+      }
+      case "policy_change": {
+        report.policy.changes++;
+        if (typeof e.ts === "string") report.policy.last_change_ts = e.ts;
         break;
       }
       case "assessment": {
@@ -271,6 +281,14 @@ export function renderMarkdown(r: OversightReport, hash: string): string {
       lines.push(``, `| Damage category | Count |`, `|---|---|`);
       for (const [k, v] of cats) lines.push(`| ${k} | ${v} |`);
     }
+  }
+  if (r.policy.changes > 0) {
+    lines.push(
+      ``,
+      `## Policy evolution`,
+      ``,
+      `${r.policy.changes} precedent-based policy change(s) recorded in the chain (latest ${r.policy.last_change_ts ?? "–"}). Each carries its evidence; replay any decision against the policy in force at the time.`
+    );
   }
   lines.push(
     ``,

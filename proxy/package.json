@@ -12,7 +12,8 @@
     "replay": "tsx src/replay.ts",
     "audit:verify": "tsx src/audit-verify.ts",
     "report": "tsx src/report.ts",
-    "mcp": "tsx src/mcp-main.ts"
+    "mcp": "tsx src/mcp-main.ts",
+    "learn": "tsx src/learn.ts"
   },
   "license": "MIT",
   "dependencies": {

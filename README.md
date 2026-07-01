@@ -54,6 +54,7 @@ Timeout (240s) → auto-deny
 - **Tamper-evident audit log** — hash-chained (RFC 8785 JCS, SHA-256). Editing, reordering, or deleting any entry is detectable.
 - **Velocity awareness** — catches "the swarm sent 50 emails" or "300 calls in two minutes" via rolling-window triggers.
 - **Token regulation** — reads every response's `usage` block; a session that burns past your token budget gets checkpointed until a human waves it on, and all spend lands in the audit report.
+- **Precedent** — `phinq learn` compiles your approve/deny history into cited policy proposals; applied changes are themselves chain-recorded. The checkpoint learns your judgment — deterministically.
 
 ## Quick start — proxy
 
@@ -216,6 +217,24 @@ npm run report -- phinq-audit.jsonl --md oversight-report.md --json oversight-re
 Generates a verifiable **human-oversight report** from the audit chain: every decision, hold outcome, operator approval, and graded assessment — including the **false-hold rate** (your calibration metric) and estimated damage prevented. The report pins the log's final entry hash and carries its own SHA-256 over the JCS-canonical body, so report and log validate each other.
 
 Useful as standing evidence of human oversight over an autonomous system — e.g. for an **EU AI Act Article 14** oversight file, an internal audit, or a customer security review.
+
+### Precedent — the checkpoint that learns your judgment
+
+```bash
+phinq learn                 # propose policy from your approve/deny history
+phinq learn --apply         # write it to phinq.yaml + record it in the chain
+```
+
+Every hold ends in a human verdict; `phinq assess` grades whether the intervention was right. **Precedent compiles that judgment into policy — case law for agents, not a learned black box.** A tool you've approved 5+ times unanimously (with zero incidents and no structural triggers) is proposed for relaxation, *citing its evidence*; a tool you keep denying — or whose hold was graded a true positive — is proposed for pinning at always-hold:
+
+```
+send_newsletter  → relax to IRREVERSIBLE_LOW
+  precedent: approved 6/6 decided holds by 1 operator(s), zero denials, zero incidents
+drop_table       → pin at IRREVERSIBLE_HIGH
+  precedent: denied 2/2 decided holds
+```
+
+Applying writes phinq.yaml **and appends a `policy_change` entry to the audit chain** — policy evolution itself is tamper-evident, so an auditor can replay why any decision was made against the policy in force at the time. Structural-trigger holds (credentials, billing, escalation…) are never relaxable, and no change applies without your command. The checkpoint gets quieter and sharper the longer it runs: **observe (shadow) → calibrate (replay) → learn (precedent).**
 
 ## Works with
 

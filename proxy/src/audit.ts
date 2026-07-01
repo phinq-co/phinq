@@ -91,6 +91,22 @@ export interface UsageEntry {
   tokens_total: number;
 }
 
+/** A `phinq learn` policy application — policy evolution is chain-recorded. */
+export interface PolicyChangeEntry {
+  type: "policy_change";
+  ts: string;
+  source: string;
+  changes: {
+    tool: string;
+    to: string;
+    action: string;
+    basis: string;
+    approvals: number;
+    denials: number;
+    holds: number;
+  }[];
+}
+
 /** Every hold state transition, including creation. */
 export interface HoldEntry {
   type: "hold_transition";
@@ -100,7 +116,7 @@ export interface HoldEntry {
   decided_by?: string;
 }
 
-export type AuditEntry = (GenesisEntry | DecisionEntry | HoldEntry | UsageEntry) & Record<string, unknown>;
+export type AuditEntry = (GenesisEntry | DecisionEntry | HoldEntry | UsageEntry | PolicyChangeEntry) & Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
 // Writer
