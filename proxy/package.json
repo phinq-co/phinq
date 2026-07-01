@@ -11,7 +11,8 @@
     "test": "tsx --test test/*.test.ts",
     "replay": "tsx src/replay.ts",
     "audit:verify": "tsx src/audit-verify.ts",
-    "report": "tsx src/report.ts"
+    "report": "tsx src/report.ts",
+    "mcp": "tsx src/mcp-main.ts"
   },
   "license": "MIT",
   "dependencies": {
@@ -24,6 +25,7 @@
     "typescript": "^5.6.0"
   },
   "bin": {
-    "phinq": "dist/cli.js"
+    "phinq": "dist/cli.js",
+    "phinq-mcp": "dist/mcp-main.js"
   }
 }

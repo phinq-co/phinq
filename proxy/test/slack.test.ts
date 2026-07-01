@@ -32,10 +32,16 @@ function makeHold(store: HoldStore) {
     responseBody: Buffer.from("{}"),
     calls: [
       {
+        ts: new Date().toISOString(),
+        event: "tool_call",
+        choice_index: 0,
+        call_index: 0,
         function_name: "delete_file",
+        arguments: '{"path":"x"}',
+        args_parse_ok: true,
+        args_bytes: 12,
         action_class: "IRREVERSIBLE_MEDIUM",
         triggers: [],
-        arguments: '{"path":"x"}',
       },
     ],
     timeoutMs: 60_000,

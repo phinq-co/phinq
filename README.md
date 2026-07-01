@@ -96,6 +96,25 @@ npm start
 
 Create an app at [api.slack.com/apps](https://api.slack.com/apps): enable **Socket Mode** (generates the `xapp-` token with `connections:write`), add the bot scopes `chat:write` + `chat:write.public`, enable **Interactivity**, install to your workspace, and invite the bot to your approvals channel. Holds appear as messages with Approve/Deny buttons; the first decision (from Slack, Telegram, or the CLI) wins. Optionally restrict who can decide with `PHINQ_SLACK_OPERATOR_IDS=U111,U222`.
 
+## Quick start — MCP gateway
+
+Wrap **any stdio MCP server** with the checkpoint — no agent or server changes:
+
+```jsonc
+// your MCP client config (Claude Code, Codex, any MCP client)
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "phinq-mcp", "--enforce", "--",
+               "npx", "-y", "@modelcontextprotocol/server-filesystem", "/data"]
+    }
+  }
+}
+```
+
+The gateway intercepts every `tools/call` at the execution boundary: safe calls pass through untouched, held calls wait for your approval (CLI `phinq approve <id>`, Telegram, or Slack — same channels as the proxy), and denials return a clean tool error the agent can recover from. Every decision joins the same hash-chained audit log. Without `--enforce` it runs in shadow mode. From a checkout: `npm run mcp -- --enforce -- <server command>`.
+
 ## Quick start — SDK
 
 ```ts
