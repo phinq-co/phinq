@@ -39,6 +39,16 @@ export interface ProxyConfig {
   telegramChatId?: string;
   /** Telegram API origin — overridable for tests. */
   telegramApiBase: string;
+  /** Slack bot token, xoxb-… (secret — env only, never logged). */
+  slackBotToken?: string;
+  /** Slack app-level token, xapp-…, for Socket Mode (secret — env only). */
+  slackAppToken?: string;
+  /** Channel ID the hold messages are posted to. */
+  slackChannel?: string;
+  /** Comma-separated Slack user IDs allowed to decide. Empty = any user. */
+  slackOperatorIds: string[];
+  /** Slack API origin — overridable for tests. */
+  slackApiBase: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ProxyConfig {
@@ -61,6 +71,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ProxyConfig {
     telegramBotToken: env.PHINQ_TELEGRAM_BOT_TOKEN || undefined,
     telegramChatId: env.PHINQ_TELEGRAM_CHAT_ID || undefined,
     telegramApiBase: (env.PHINQ_TELEGRAM_API ?? "https://api.telegram.org").replace(/\/+$/, ""),
+    slackBotToken: env.PHINQ_SLACK_BOT_TOKEN || undefined,
+    slackAppToken: env.PHINQ_SLACK_APP_TOKEN || undefined,
+    slackChannel: env.PHINQ_SLACK_CHANNEL || undefined,
+    slackOperatorIds: (env.PHINQ_SLACK_OPERATOR_IDS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    slackApiBase: (env.PHINQ_SLACK_API ?? "https://slack.com/api").replace(/\/+$/, ""),
   };
 }
 

@@ -84,6 +84,18 @@ npm start
 
 Create a bot with [@BotFather](https://t.me/BotFather), send it one message, get your chat ID (e.g. via @userinfobot). That's it. On a HOLD you'll receive Approve/Deny buttons.
 
+### Or approve from Slack
+
+```bash
+PHINQ_ENFORCE=1 \
+PHINQ_SLACK_BOT_TOKEN=xoxb-*** \
+PHINQ_SLACK_APP_TOKEN=xapp-*** \
+PHINQ_SLACK_CHANNEL=C0123456789 \
+npm start
+```
+
+Create an app at [api.slack.com/apps](https://api.slack.com/apps): enable **Socket Mode** (generates the `xapp-` token with `connections:write`), add the bot scopes `chat:write` + `chat:write.public`, enable **Interactivity**, install to your workspace, and invite the bot to your approvals channel. Holds appear as messages with Approve/Deny buttons; the first decision (from Slack, Telegram, or the CLI) wins. Optionally restrict who can decide with `PHINQ_SLACK_OPERATOR_IDS=U111,U222`.
+
 ## Quick start — SDK
 
 ```ts
@@ -112,6 +124,10 @@ if (allowed) await runTool();
 | `PHINQ_HOLD_TIMEOUT_S` | `240` | Approval window |
 | `PHINQ_TELEGRAM_BOT_TOKEN` | unset | Bot token (env only) |
 | `PHINQ_TELEGRAM_CHAT_ID` | unset | Operator chat ID |
+| `PHINQ_SLACK_BOT_TOKEN` | unset | Slack bot token, `xoxb-…` (env only) |
+| `PHINQ_SLACK_APP_TOKEN` | unset | Slack app token for Socket Mode, `xapp-…` |
+| `PHINQ_SLACK_CHANNEL` | unset | Channel ID for hold messages |
+| `PHINQ_SLACK_OPERATOR_IDS` | unset | Comma-separated user IDs allowed to decide |
 | `PHINQ_LOG_LEVEL` | `info` | Pino log level |
 
 ## Classifier (risk levels)

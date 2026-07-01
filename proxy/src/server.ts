@@ -17,6 +17,7 @@ import { SessionStore, sessionKeyFromAuth } from "./session.js";
 import { loadPhinqRules, type PhinqRulesConfig } from "./phinq-config.js";
 import { HoldStore, syntheticDenial } from "./holds.js";
 import { TelegramNotifier } from "./telegram.js";
+import { CompositeNotifier, SlackNotifier, type HoldNotifier } from "./slack.js";
 import { AuditLog } from "./audit.js";
 import { timingSafeEqual } from "node:crypto";
 
@@ -40,7 +41,7 @@ interface Governance {
   sessions: SessionStore;
   /** Set when enforcement is active (component 4); null = shadow mode. */
   holds: HoldStore | null;
-  notifier: TelegramNotifier | null;
+  notifier: HoldNotifier | null;
   holdTimeoutMs: number;
   /** Hash-chained audit log (component 5); null = disabled. */
   audit: AuditLog | null;
@@ -96,8 +97,10 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
     ? new AuditLog(config.auditLogPath, (msg) => app.log.error(msg))
     : null;
 
+  const slackReady = Boolean(config.slackBotToken && config.slackAppToken && config.slackChannel);
+
   let holds: HoldStore | null = null;
-  let notifier: TelegramNotifier | null = null;
+  let notifier: HoldNotifier | null = null;
   if (enforcing) {
     holds = new HoldStore(config.holdDbPath, app.log);
     holds.installSecret(); // generate + persist now so the `phinq` CLI can auth
@@ -110,20 +113,46 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
         decided_by: hold.decided_by,
       });
     });
+    const notifiers: HoldNotifier[] = [];
     if (telegramReady) {
-      notifier = new TelegramNotifier(
-        {
-          botToken: config.telegramBotToken!,
-          operatorChatId: telegramChatId!,
-          apiBase: config.telegramApiBase,
-        },
-        holds,
-        app.log
+      notifiers.push(
+        new TelegramNotifier(
+          {
+            botToken: config.telegramBotToken!,
+            operatorChatId: telegramChatId!,
+            apiBase: config.telegramApiBase,
+          },
+          holds,
+          app.log
+        )
       );
+    }
+    if (slackReady) {
+      notifiers.push(
+        new SlackNotifier(
+          {
+            botToken: config.slackBotToken!,
+            appToken: config.slackAppToken!,
+            channel: config.slackChannel!,
+            operatorIds: config.slackOperatorIds,
+            apiBase: config.slackApiBase,
+          },
+          holds,
+          app.log
+        )
+      );
+    }
+    if (notifiers.length > 0) {
+      notifier = notifiers.length === 1 ? notifiers[0] : new CompositeNotifier(notifiers);
       app.addHook("onReady", async () => notifier!.start());
     }
     app.log.info(
-      { hold_timeout_seconds: holdTimeoutSeconds, telegram: telegramReady, local_approval: true },
+      {
+        hold_timeout_seconds: holdTimeoutSeconds,
+        telegram: telegramReady,
+        slack: slackReady,
+        local_approval: true,
+      },
       "ENFORCEMENT ACTIVE — holds enabled"
     );
   } else {
