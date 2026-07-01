@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "test": "tsx --test test/*.test.ts",
     "replay": "tsx src/replay.ts",
-    "audit:verify": "tsx src/audit-verify.ts"
+    "audit:verify": "tsx src/audit-verify.ts",
+    "report": "tsx src/report.ts"
   },
   "license": "MIT",
   "dependencies": {

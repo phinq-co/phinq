@@ -165,6 +165,16 @@ npm run replay -- phinq-toolcalls.jsonl [phinq.yaml]
 
 Reclassify a captured corpus. Tune thresholds, re-run. Only turn enforcement on once you have zero false HOLDs on routine operations.
 
+### Oversight report — turn the log into evidence
+
+```bash
+npm run report -- phinq-audit.jsonl --md oversight-report.md --json oversight-report.json
+```
+
+Generates a verifiable **human-oversight report** from the audit chain: every decision, hold outcome, operator approval, and graded assessment — including the **false-hold rate** (your calibration metric) and estimated damage prevented. The report pins the log's final entry hash and carries its own SHA-256 over the JCS-canonical body, so report and log validate each other.
+
+Useful as standing evidence of human oversight over an autonomous system — e.g. for an **EU AI Act Article 14** oversight file, an internal audit, or a customer security review.
+
 ## Works with
 
 OpenRouter, OpenAI (Codex, Agents SDK), Anthropic, Mastra, LangChain/LangGraph, Vercel AI SDK, CrewAI, AutoGen, Pydantic AI, LlamaIndex, Hugging Face, and any runtime that speaks the OpenAI or Anthropic APIs with a configurable base URL.
