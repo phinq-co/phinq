@@ -1,7 +1,7 @@
 {
   "name": "@phinq/governance",
-  "version": "0.1.0",
-  "description": "In-process governance for TypeScript AI agents — classify, gate, and audit tool calls before they execute. Same decision engine as the Phinq proxy.",
+  "version": "1.0.0",
+  "description": "In-process governance for TypeScript AI agents \u2014 classify, gate, and audit tool calls before they execute. Same decision engine as the Phinq proxy.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,7 +9,9 @@
     ".": "./dist/index.js",
     "./mastra": "./dist/adapters/mastra.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "sync": "node scripts/sync-classifier.mjs",
     "prebuild": "npm run sync",

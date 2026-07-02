@@ -1,6 +1,6 @@
 {
   "name": "phinq-proxy",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "OpenRouter-compatible governance proxy for autonomous AI agents",
   "type": "module",
   "main": "dist/index.js",

@@ -21,7 +21,7 @@ import { CompositeNotifier, SlackNotifier, type HoldNotifier } from "./slack.js"
 import { AuditLog } from "./audit.js";
 import { timingSafeEqual } from "node:crypto";
 
-export const VERSION = "0.8.0";
+export const VERSION = "1.0.0";
 
 /**
  * Exact shape required to trigger Hermes's sticky non-streaming fallback:
