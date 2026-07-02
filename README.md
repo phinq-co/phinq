@@ -56,7 +56,15 @@ Timeout (240s) → auto-deny
 - **Token regulation** — reads every response's `usage` block; a session that burns past your token budget gets checkpointed until a human waves it on, and all spend lands in the audit report.
 - **Precedent** — `phinq learn` compiles your approve/deny history into cited policy proposals; applied changes are themselves chain-recorded. The checkpoint learns your judgment — deterministically.
 
-## Quick start — proxy
+## Quick start — two minutes, no config
+
+```bash
+npx phinq
+```
+
+The wizard detects what you run (Claude Code, Codex, Hermes, MCP…), asks three plain-English questions, and prints the one line to paste. It starts in **watch-only mode** — nothing is blocked until you say so. Then `phinq start` runs the checkpoint and `phinq watch` shows anything held.
+
+## Quick start — proxy (from source)
 
 ```bash
 git clone https://github.com/phinq-co/phinq.git

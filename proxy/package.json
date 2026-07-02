@@ -1,7 +1,7 @@
 {
-  "name": "phinq-proxy",
+  "name": "phinq",
   "version": "1.0.0",
-  "description": "OpenRouter-compatible governance proxy for autonomous AI agents",
+  "description": "The runtime checkpoint for AI agents \u2014 inspect every tool call, hold the irreversible for approval, keep verifiable evidence of human oversight.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -13,7 +13,8 @@
     "audit:verify": "tsx src/audit-verify.ts",
     "report": "tsx src/report.ts",
     "mcp": "tsx src/mcp-main.ts",
-    "learn": "tsx src/learn.ts"
+    "learn": "tsx src/learn.ts",
+    "prepublishOnly": "npm run build && npm test"
   },
   "license": "MIT",
   "dependencies": {
@@ -28,5 +29,23 @@
   "bin": {
     "phinq": "dist/cli.js",
     "phinq-mcp": "dist/mcp-main.js"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/phinq-co/phinq.git"
+  },
+  "homepage": "https://www.phinq.co",
+  "keywords": [
+    "ai-agents",
+    "governance",
+    "guardrails",
+    "human-in-the-loop",
+    "mcp",
+    "checkpoint",
+    "audit"
+  ]
 }

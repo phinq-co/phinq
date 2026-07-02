@@ -2,6 +2,8 @@
 /**
  * `phinq` — local control CLI for the Phinq proxy.
  *
+ *   phinq                       interactive setup (npx phinq)
+ *   phinq start                 start the checkpoint with ~/.phinq settings
  *   phinq holds                 list pending held actions
  *   phinq approve <id>          release the held response to the agent
  *   phinq deny <id>             return a synthetic denial to the agent
@@ -23,6 +25,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { verifyFile } from "./audit.js";
 import { runLearn } from "./learn.js";
+import { runInit, runStart } from "./init.js";
 
 // Find the running instance: explicit env wins, else the pointer the proxy
 // drops at ~/.phinq/instance.json, else built-in defaults.
@@ -94,6 +97,15 @@ function printHolds(holds: any[]): void {
 async function main(): Promise<void> {
   const [cmd, arg] = process.argv.slice(2);
   switch (cmd) {
+    case undefined:
+    case "init": {
+      process.exit(await runInit());
+      break;
+    }
+    case "start": {
+      await runStart();
+      return; // server keeps the process alive
+    }
     case "holds":
     case "ls": {
       printHolds((await api("/phinq/holds")).holds);
@@ -143,12 +155,15 @@ async function main(): Promise<void> {
     }
     default:
       console.log(
-        "phinq — local control for the Phinq proxy\n\n" +
+        "phinq — the runtime checkpoint for AI agents\n\n" +
+          "  phinq                      set up in two minutes (interactive)\n" +
+          "  phinq start                start the checkpoint\n" +
           "  phinq holds                list pending held actions\n" +
           "  phinq approve <id>         release the held response\n" +
           "  phinq deny <id>            return a synthetic denial\n" +
           "  phinq watch                live view of pending holds\n" +
-          "  phinq audit verify [file]  verify the audit hash chain\n"
+          "  phinq audit verify [file]  verify the audit hash chain\n" +
+          "  phinq learn [--apply]      turn your approvals into policy\n"
       );
       if (cmd && cmd !== "help") process.exit(1);
   }
