@@ -53,8 +53,8 @@ export function snippetFor(runtimeId: string): string {
         "",
         `  ANTHROPIC_BASE_URL=${PROXY_URL} claude`,
         "",
-        "Or protect its MCP tools instead — wrap any server in your MCP config:",
-        `  "command": "npx", "args": ["-y", "-p", "@phinq/phinq", "phinq-mcp", "--enforce", "--", "<the original command>"]`,
+        "Or protect its MCP tools instead — after `npm i -g @phinq/phinq`, wrap any server in your MCP config:",
+        `  "command": "phinq-mcp", "args": ["--enforce", "--", "<the original command>"]`,
       ].join("\n");
     case "codex":
       return [

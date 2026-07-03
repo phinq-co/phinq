@@ -108,15 +108,21 @@ Create an app at [api.slack.com/apps](https://api.slack.com/apps): enable **Sock
 
 ## Quick start — MCP gateway
 
-Wrap **any stdio MCP server** with the checkpoint — no agent or server changes:
+Wrap **any stdio MCP server** with the checkpoint — no agent or server changes. Install once, globally:
+
+```bash
+npm install -g @phinq/phinq
+```
+
+Then reference `phinq-mcp` directly in your MCP client config (avoid nesting it inside another `npx` call — some `npx`-inside-`npx` setups fail to resolve the wrapped command):
 
 ```jsonc
 // your MCP client config (Claude Code, Codex, any MCP client)
 {
   "mcpServers": {
     "filesystem": {
-      "command": "npx",
-      "args": ["-y", "-p", "@phinq/phinq", "phinq-mcp", "--enforce", "--",
+      "command": "phinq-mcp",
+      "args": ["--enforce", "--",
                "npx", "-y", "@modelcontextprotocol/server-filesystem", "/data"]
     }
   }
