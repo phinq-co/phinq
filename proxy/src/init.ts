@@ -36,6 +36,9 @@ export function detectRuntimes(home: string = homedir()): Runtime[] {
   if (has(".hermes/config.yaml")) {
     found.push({ id: "hermes", name: "Hermes", evidence: "~/.hermes/config.yaml" });
   }
+  if (has(".gemini")) {
+    found.push({ id: "gemini-cli", name: "Gemini CLI", evidence: "~/.gemini" });
+  }
   if (has(".cursor")) {
     found.push({ id: "cursor", name: "Cursor", evidence: "~/.cursor" });
   }
@@ -70,10 +73,25 @@ export function snippetFor(runtimeId: string): string {
       ].join("\n");
     case "hermes":
       return [
-        "Point Hermes at the checkpoint in ~/.hermes/config.yaml:",
+        "Point Hermes at the checkpoint via a custom provider in ~/.hermes/config.yaml",
+        "(the built-in openrouter provider ignores base_url — a named provider honors it):",
         "",
         `  model:`,
-        `    base_url: ${PROXY_URL}/api/v1`,
+        `    provider: phinq`,
+        `  providers:`,
+        `    phinq:`,
+        `      name: phinq`,
+        `      base_url: ${PROXY_URL}/api/v1`,
+        `      key_env: OPENROUTER_API_KEY`,
+        `      api_mode: chat_completions`,
+      ].join("\n");
+    case "gemini-cli":
+      return [
+        "Run Gemini CLI through the checkpoint with one environment variable:",
+        "",
+        `  GOOGLE_GEMINI_BASE_URL=${PROXY_URL} gemini`,
+        "",
+        "(google-genai SDKs: pass http_options={'base_url': '" + PROXY_URL + "'})",
       ].join("\n");
     case "cursor":
     default:
@@ -82,6 +100,11 @@ export function snippetFor(runtimeId: string): string {
         "",
         `  base_url = ${PROXY_URL}/api/v1     # OpenAI-style APIs`,
         `  base_url = ${PROXY_URL}            # Anthropic SDK`,
+        `  base_url = ${PROXY_URL}            # Gemini (generateContent)`,
+        "",
+        "No base URL to change? Gate any action from any language over HTTP:",
+        `  POST ${PROXY_URL}/phinq/gate  {"name": "delete_files", "arguments": {...}}`,
+        `  → {"allowed": true/false}   (holds buzz your phone first)`,
         "",
         "Your existing API key keeps working — Phinq passes it through and never stores it.",
       ].join("\n");

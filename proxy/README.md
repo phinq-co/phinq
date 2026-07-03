@@ -8,7 +8,7 @@
 npx @phinq/phinq
 ```
 
-The setup wizard detects what you run (Claude Code, Codex, Hermes, MCP servers…), asks three plain-English questions, and prints the one line to paste. Then:
+The setup wizard detects what you run (Claude Code, Codex, Gemini CLI, Hermes, MCP servers…), asks three plain-English questions, and prints the one line to paste. Then:
 
 ```bash
 phinq start     # start the checkpoint
@@ -24,6 +24,7 @@ Your existing API key keeps working — Phinq passes it through and never stores
 - **A record you can prove** — hash-chained audit log; `phinq report` turns it into a human-oversight report (false-hold rate, damage prevented, token spend).
 - **A checkpoint that learns** — `phinq learn` turns your approve/deny history into cited policy proposals.
 - **MCP gateway** — wrap any MCP server: `npm i -g @phinq/phinq` then `phinq-mcp --enforce -- <server command>`.
+- **Works with everything** — four wire dialects (OpenAI Chat Completions incl. streaming, OpenAI Responses, Anthropic Messages, Gemini generateContent) cover Claude Code, Codex, Gemini CLI, Hermes, LangChain, CrewAI, Mastra, and any agent with a base URL. No base URL? Gate any action from any language: `POST /phinq/gate {"name": "...", "arguments": {...}}` → `{"allowed": true/false}` — holds buzz your phone first.
 
 ## Everything else
 

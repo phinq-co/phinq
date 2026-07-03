@@ -194,8 +194,16 @@ _SHELL_PATTERNS: list[tuple[re.Pattern[str], _ArgFinding]] = [
     ),
 ]
 
-# Paths that constitute the governance layer itself (DISABLE_SAFEGUARDS).
-_SAFEGUARD_PATHS = re.compile(r"phinq\.yaml|phinq-toolcalls|audit.*\.jsonl|phinq[-_]?audit", re.I)
+# References to the governance layer itself (DISABLE_SAFEGUARDS): policy,
+# audit chain + corpus, hold/session state, AND the phinq-governance skill.
+# An agent must not quietly read, edit, or delete the rules that constrain it.
+# Kept byte-for-byte equivalent to the TypeScript SAFEGUARD_PATHS regex.
+_SAFEGUARD_PATHS = re.compile(
+    r"phinq\.ya?ml|phinq\.env|phinq[-_]config|phinq[-_]toolcalls|phinq[-_]?audit"
+    r"|audit.*\.jsonl|phinq[-_]holds|phinq[-_]session|phinq[-_]governance"
+    r"|(^|[\s/\"'=([])\.phinq(?=[/\\\"'\s)\]]|$)",
+    re.I,
+)
 
 # Argument keys that carry recipients for outbound communications.
 _RECIPIENT_KEYS = ["to", "recipients", "emails", "cc", "bcc", "targets"]

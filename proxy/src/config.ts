@@ -7,6 +7,8 @@ export interface ProxyConfig {
   upstream: string;
   /** Upstream origin for the Anthropic Messages API (`/v1/messages`). */
   anthropicUpstream: string;
+  /** Upstream origin for the Gemini generateContent API (`/v1beta/*`). */
+  geminiUpstream: string;
   /**
    * Per-request upstream timeout. Kept below Hermes's 300s non-stream
    * stale detector so the proxy fails before the agent silently hangs up
@@ -60,6 +62,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ProxyConfig {
       /\/+$/,
       ""
     ),
+    geminiUpstream: (
+      env.PHINQ_GEMINI_UPSTREAM ?? "https://generativelanguage.googleapis.com"
+    ).replace(/\/+$/, ""),
     upstreamTimeoutMs: intFromEnv(env.PHINQ_UPSTREAM_TIMEOUT_MS, 280_000),
     toolCallLogPath: env.PHINQ_TOOLCALL_LOG ?? "phinq-toolcalls.jsonl",
     phinqConfigPath: env.PHINQ_CONFIG ?? "phinq.yaml",

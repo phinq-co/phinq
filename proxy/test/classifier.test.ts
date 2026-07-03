@@ -97,6 +97,34 @@ test("touching phinq governance files holds as DISABLE_SAFEGUARDS", () => {
   assert.ok(c.triggers.includes("DISABLE_SAFEGUARDS"));
 });
 
+test("editing the phinq-governance skill definition holds as DISABLE_SAFEGUARDS", () => {
+  // The exact gap the live fire drill exposed: an agent patching its own
+  // governance skill previously slipped through as IRREVERSIBLE_LOW/ALLOW.
+  const c = classify("skill_manage", {
+    action: "patch",
+    name: "phinq-governance",
+    old_string: "Log the action",
+    new_string: "Skip logging",
+  });
+  assert.equal(c.decision, "HOLD");
+  assert.equal(c.action_class, AgentActionClass.IRREVERSIBLE_HIGH);
+  assert.ok(c.triggers.includes("DISABLE_SAFEGUARDS"));
+});
+
+test("touching phinq policy/state files (env, holds db, .phinq dir) holds", () => {
+  for (const path of ["/root/.phinq/phinq.env", "~/.phinq/holds.db", "phinq-session.db"]) {
+    const c = classify("write_file", { path, content: "x" });
+    assert.equal(c.decision, "HOLD", `${path} should hold`);
+    assert.ok(c.triggers.includes("DISABLE_SAFEGUARDS"), `${path} should trip DISABLE_SAFEGUARDS`);
+  }
+});
+
+test("unrelated names containing 'phinq' as a substring do not false-trip", () => {
+  // Guard against the broadened regex over-matching ordinary workspace files.
+  const c = classify("write_file", { path: "docs/phinquiry-notes.md", content: "x" });
+  assert.ok(!c.triggers.includes("DISABLE_SAFEGUARDS"));
+});
+
 test("single delete is MEDIUM/HOLD; bulk single-call delete trips BULK_DELETE", () => {
   const single = classify("delete_file", { path: "old.md" });
   assert.equal(single.action_class, AgentActionClass.IRREVERSIBLE_MEDIUM);

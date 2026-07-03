@@ -12,7 +12,14 @@ import {
   parseMessagesBody,
   syntheticMessagesDenial,
 } from "./anthropic.js";
+import {
+  extractGeminiToolCalls,
+  parseGeminiBody,
+  syntheticGeminiDenial,
+  geminiModelFromUrl,
+} from "./gemini.js";
 import { classifyToolCall, sessionEventKind } from "./classifier.js";
+import { chatCompletionToSSE, coerceNonStream } from "./sse.js";
 import { SessionStore, sessionKeyFromAuth } from "./session.js";
 import { loadPhinqRules, type PhinqRulesConfig } from "./phinq-config.js";
 import { HoldStore, syntheticDenial } from "./holds.js";
@@ -21,20 +28,7 @@ import { CompositeNotifier, SlackNotifier, type HoldNotifier } from "./slack.js"
 import { AuditLog } from "./audit.js";
 import { timingSafeEqual } from "node:crypto";
 
-export const VERSION = "1.0.0";
-
-/**
- * Exact shape required to trigger Hermes's sticky non-streaming fallback:
- * the message must contain "stream" and "not supported" (case-insensitive).
- * See DAY0-FINDINGS.md §1 / hermes run_agent.py:7207. Do not reword.
- */
-const STREAM_NOT_SUPPORTED = {
-  error: {
-    message: "Streaming is not supported by this endpoint; retry with stream:false.",
-    type: "invalid_request_error",
-    code: "stream_not_supported",
-  },
-};
+export const VERSION = "1.2.0";
 
 interface Governance {
   rules: PhinqRulesConfig["rules"];
@@ -51,8 +45,9 @@ interface Governance {
 
 /**
  * Token regulation (fuel gauge): pull total tokens from a response's usage
- * block, across all three dialects — OpenAI chat (prompt_/completion_tokens),
- * Responses + Anthropic (input_/output_tokens).
+ * block, across all four dialects — OpenAI chat (prompt_/completion_tokens),
+ * Responses + Anthropic (input_/output_tokens), Gemini (usageMetadata with
+ * promptTokenCount/candidatesTokenCount/totalTokenCount).
  */
 export function extractUsageTokens(response: unknown): {
   prompt: number;
@@ -60,13 +55,15 @@ export function extractUsageTokens(response: unknown): {
   total: number;
 } | null {
   if (typeof response !== "object" || response === null) return null;
-  const usage = (response as Record<string, unknown>).usage;
+  const r = response as Record<string, unknown>;
+  const usage = r.usage ?? r.usageMetadata;
   if (typeof usage !== "object" || usage === null) return null;
   const u = usage as Record<string, unknown>;
   const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
-  const prompt = num(u.prompt_tokens) || num(u.input_tokens);
-  const completion = num(u.completion_tokens) || num(u.output_tokens);
-  const total = num(u.total_tokens) || prompt + completion;
+  const prompt = num(u.prompt_tokens) || num(u.input_tokens) || num(u.promptTokenCount);
+  const completion =
+    num(u.completion_tokens) || num(u.output_tokens) || num(u.candidatesTokenCount);
+  const total = num(u.total_tokens) || num(u.totalTokenCount) || prompt + completion;
   return total > 0 ? { prompt, completion, total } : null;
 }
 
@@ -101,11 +98,31 @@ function recordUsage(
   }
 }
 
+/**
+ * Gemini clients pass the API key as a `?key=` query parameter, so raw URLs
+ * are secrets. Every URL that reaches a log line goes through this first.
+ */
+export function scrubUrl(url: string): string {
+  return url.replace(/([?&]key=)[^&]*/gi, "$1<redacted>");
+}
+
 export function buildServer(config: ProxyConfig): FastifyInstance {
   const app = Fastify({
     logger: {
       level: process.env.PHINQ_LOG_LEVEL ?? "info",
-      redact: ["req.headers.authorization", "req.headers['x-api-key']"],
+      redact: [
+        "req.headers.authorization",
+        "req.headers['x-api-key']",
+        "req.headers['x-goog-api-key']",
+      ],
+      serializers: {
+        // Default serializer logs req.url verbatim — scrub ?key=… (Gemini).
+        req: (req: FastifyRequest) => ({
+          method: req.method,
+          url: scrubUrl(req.url),
+          remoteAddress: req.ip,
+        }),
+      },
     },
     // The proxy must never re-serialize client bodies: capture raw bytes,
     // parse a copy only for inspection, forward the original buffer.
@@ -289,6 +306,157 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
     });
   }
 
+  // ---- Universal HTTP gate ------------------------------------------------
+  // For agents Phinq has no wire dialect for: any language or framework that
+  // can make an HTTP call gets the full checkpoint. `/phinq/classify` is a
+  // pure advisory lookup (no state touched); `/phinq/gate` is the real thing —
+  // it records the call in the corpus + audit chain, applies velocity windows,
+  // and in enforce mode blocks until the operator decides (Telegram/Slack/CLI).
+  // Call gate BEFORE executing a tool; execute only if `allowed` is true.
+  const parseGateBody = (
+    req: FastifyRequest,
+    reply: FastifyReply
+  ): { name: string; argumentsJson?: string; sessionKey: string; agent?: string } | null => {
+    let b: Record<string, unknown>;
+    try {
+      b = JSON.parse(((req.body as Buffer) ?? Buffer.from("{}")).toString("utf8"));
+    } catch {
+      reply.code(400).send({ error: { message: "body must be JSON", code: "bad_request" } });
+      return null;
+    }
+    const name = typeof b.name === "string" ? b.name.trim() : "";
+    if (!name) {
+      reply
+        .code(400)
+        .send({ error: { message: "missing required field: name", code: "bad_request" } });
+      return null;
+    }
+    let argumentsJson: string | undefined;
+    if (typeof b.arguments === "string") argumentsJson = b.arguments;
+    else if (b.arguments !== undefined) {
+      try {
+        argumentsJson = JSON.stringify(b.arguments);
+      } catch {
+        argumentsJson = undefined;
+      }
+    }
+    const sessionKey =
+      "gate:" + (typeof b.session_key === "string" && b.session_key ? b.session_key : "default");
+    const agent = typeof b.agent === "string" ? b.agent : undefined;
+    return { name, argumentsJson, sessionKey, agent };
+  };
+
+  app.post("/phinq/classify", (req, reply) => {
+    const g = parseGateBody(req, reply);
+    if (!g) return;
+    const c = classifyToolCall(
+      { name: g.name, argumentsJson: g.argumentsJson },
+      governance.sessions.counts(g.sessionKey),
+      governance.rules
+    );
+    reply.send(c);
+  });
+
+  app.post("/phinq/gate", async (req, reply) => {
+    const g = parseGateBody(req, reply);
+    if (!g) return;
+    const started = Date.now();
+
+    const counts = governance.sessions.counts(g.sessionKey);
+    const c = classifyToolCall(
+      { name: g.name, argumentsJson: g.argumentsJson },
+      counts,
+      governance.rules
+    );
+    const kind = sessionEventKind(g.name);
+    if (kind) governance.sessions.record(g.sessionKey, kind);
+
+    const call: ObservedToolCall = {
+      ts: new Date().toISOString(),
+      event: "tool_call",
+      request_model: g.agent,
+      choice_index: 0,
+      call_index: 0,
+      call_type: "gate",
+      function_name: g.name,
+      arguments: g.argumentsJson,
+      args_parse_ok: (() => {
+        if (g.argumentsJson === undefined) return false;
+        try {
+          JSON.parse(g.argumentsJson);
+          return true;
+        } catch {
+          return false;
+        }
+      })(),
+      args_bytes: g.argumentsJson === undefined ? 0 : Buffer.byteLength(g.argumentsJson, "utf8"),
+      action_class: c.action_class,
+      decision: c.decision,
+      triggers: c.triggers,
+      reasons: c.reasons,
+      unknown_tool: c.unknown_tool,
+    };
+    corpus?.record([call]);
+
+    const auditDecision = (holdId?: string) =>
+      audit?.append({
+        type: "decision",
+        ts: new Date().toISOString(),
+        model: g.agent,
+        function_name: g.name,
+        action_class: c.action_class,
+        triggers: c.triggers,
+        decision: c.decision,
+        enforced: governance.enforcing,
+        hold_id: c.decision === "HOLD" ? holdId : undefined,
+        args_bytes: call.args_bytes,
+      });
+
+    if (c.decision === "ALLOW" || governance.holds === null) {
+      auditDecision();
+      reply.send({
+        allowed: true,
+        enforced: governance.enforcing,
+        classification: c,
+        // Shadow mode passes HOLD verdicts through, same as the proxy paths.
+        shadow: c.decision === "HOLD" && governance.holds === null ? true : undefined,
+      });
+      return;
+    }
+
+    const { id, outcome } = governance.holds.createAndWait({
+      responseBody: Buffer.from(JSON.stringify({ gate: { name: g.name, agent: g.agent } })),
+      calls: [call],
+      timeoutMs: governance.holdTimeoutMs,
+      model: g.agent,
+    });
+    auditDecision(id);
+    audit?.append({ type: "hold_transition", ts: new Date().toISOString(), hold_id: id, status: "PENDING" });
+
+    req.raw.once("close", () => governance.holds?.clientClosed(id));
+    const hold = governance.holds.get(id);
+    if (hold) {
+      void governance.notifier?.notifyHold(hold, governance.holdTimeoutMs / 1000);
+      req.log.info(
+        { hold_id: id, api: "gate", approve: `phinq approve ${id}`, deny: `phinq deny ${id}` },
+        "awaiting operator decision"
+      );
+    }
+
+    const decision = await outcome;
+    req.log.info(
+      { hold_id: id, outcome: decision, latency_ms: Date.now() - started },
+      "hold completed"
+    );
+    reply.send({
+      allowed: decision === "APPROVED",
+      enforced: true,
+      hold_id: id,
+      resolution: decision,
+      classification: c,
+    });
+  });
+
   // Governed path — both prefixes Hermes-style base URLs can produce.
   for (const path of ["/v1/chat/completions", "/api/v1/chat/completions"]) {
     app.post(path, (req, reply) =>
@@ -311,6 +479,21 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
   app.post("/v1/messages", (req, reply) =>
     governedMessages(req, reply, config, corpus, governance)
   );
+
+  // Gemini generateContent dialect (Gemini CLI, google-genai SDKs, Google
+  // ADK). The action verb lives after a colon in the last path segment, which
+  // Fastify's router can't pattern-match — so one wildcard owns /v1beta and
+  // dispatches: generateContent/streamGenerateContent are governed, everything
+  // else (models list, countTokens…) blind-proxies to the Gemini upstream.
+  app.all("/v1beta/*", (req, reply) => {
+    if (req.method === "POST" && /:(stream)?generatecontent/i.test(req.url.split("?")[0])) {
+      return governedGemini(req, reply, config, corpus, governance);
+    }
+    return blindPassthrough(req, reply, config, {
+      upstream: config.geminiUpstream,
+      path: req.url,
+    });
+  });
 
   // Everything else under /v1 and /api/v1 blind-proxies upstream.
   app.all("/v1/*", (req, reply) => blindPassthrough(req, reply, config));
@@ -348,16 +531,40 @@ async function governedChatCompletions(
     }
   }
 
-  if (parsed?.stream === true) {
-    req.log.info({ model: parsed.model, path: req.url }, "stream request rejected");
-    reply.code(400).send(STREAM_NOT_SUPPORTED);
-    return;
-  }
+  // The client asked to stream. Governance needs the whole body (to classify
+  // tool calls and hold atomically), so we fetch a non-streamed completion
+  // upstream and re-stream the governed result back as SSE. See sse.ts.
+  const wantsStream = parsed?.stream === true;
+  const forwardBody = wantsStream && body ? coerceNonStream(body) : body;
 
   const requestModel = typeof parsed?.model === "string" ? parsed.model : undefined;
 
-  const result = await forwardOrFail(req, reply, config, { model: requestModel, started });
+  const result = await forwardOrFail(
+    req,
+    reply,
+    config,
+    { model: requestModel, started },
+    undefined,
+    forwardBody
+  );
   if (!result) return; // error response already sent
+
+  // Send the final governed body honouring the client's streaming preference.
+  // Upstream JSON/content-length headers are dropped for the SSE path.
+  const sendFinal = (status: number, headers: Record<string, string> | undefined, buf: Buffer): void => {
+    if (wantsStream) {
+      reply
+        .code(status)
+        .header("content-type", "text/event-stream")
+        .header("cache-control", "no-cache")
+        .header("connection", "keep-alive")
+        .send(chatCompletionToSSE(buf));
+    } else if (headers) {
+      reply.code(status).headers(headers).send(buf);
+    } else {
+      reply.code(status).header("content-type", "application/json").send(buf);
+    }
+  };
 
   const sessionKey = sessionKeyFromAuth(req.headers.authorization);
 
@@ -480,24 +687,24 @@ async function governedChatCompletions(
 
     switch (decision) {
       case "APPROVED":
-        reply.code(result.status).headers(result.headers).send(result.body);
+        sendFinal(result.status, result.headers, result.body);
         return;
       case "DENIED":
-        reply.code(200).header("content-type", "application/json").send(syntheticDenial(result.body, "denied"));
+        sendFinal(200, undefined, syntheticDenial(result.body, "denied"));
         return;
       case "EXPIRED_TIMEOUT":
-        reply.code(200).header("content-type", "application/json").send(syntheticDenial(result.body, "timeout"));
+        sendFinal(200, undefined, syntheticDenial(result.body, "timeout"));
         return;
       case "EXPIRED_CLIENT":
         // Connection is (almost certainly) gone — a best-effort denial is a
         // no-op on a dead socket, and saves the agent if it is somehow alive.
-        reply.code(200).header("content-type", "application/json").send(syntheticDenial(result.body, "timeout"));
+        sendFinal(200, undefined, syntheticDenial(result.body, "timeout"));
         return;
     }
   }
 
   if (calls.length > 0) auditDecisions();
-  reply.code(result.status).headers(result.headers).send(result.body);
+  sendFinal(result.status, result.headers, result.body);
 }
 
 /**
@@ -826,12 +1033,172 @@ async function governedMessages(
   reply.code(result.status).headers(result.headers).send(result.body);
 }
 
+/**
+ * Governed handler for Gemini generateContent / streamGenerateContent —
+ * fourth dialect (Gemini CLI, google-genai SDKs, Google ADK). Same governance
+ * core; only extraction, auth, the upstream, and the denial wire-form differ.
+ * Streamed bodies (JSON-array or SSE) are buffered whole, so holds stay atomic.
+ */
+async function governedGemini(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  config: ProxyConfig,
+  corpus: ToolCallCorpus | null,
+  governance: Governance
+): Promise<void> {
+  const started = Date.now();
+
+  // The model is in the URL, not the body: /v1beta/models/<model>:generateContent
+  const requestModel = geminiModelFromUrl(req.url);
+
+  const result = await forwardOrFail(
+    req,
+    reply,
+    config,
+    { model: requestModel, started },
+    { upstream: config.geminiUpstream, path: req.url }
+  );
+  if (!result) return;
+
+  // Gemini auth: x-goog-api-key header, OAuth Bearer, or ?key= in the URL.
+  // Whichever is present keys the session (hashed — never logged raw).
+  const keyParam = /[?&]key=([^&]+)/.exec(req.url)?.[1];
+  const authHeader =
+    (req.headers["x-goog-api-key"] as string | undefined) ??
+    req.headers.authorization ??
+    keyParam;
+  const sessionKey = sessionKeyFromAuth(authHeader);
+
+  if (result.status !== 200) {
+    try {
+      governance.sessions.record(sessionKey, "error");
+    } catch {
+      /* session bookkeeping is fail-open */
+    }
+    reply.code(result.status).headers(result.headers).send(result.body);
+    return;
+  }
+
+  let calls: ObservedToolCall[] = [];
+  const ct = String(result.headers["content-type"] ?? "");
+  try {
+    const response = parseGeminiBody(result.body.toString("utf8"), ct);
+    recordUsage(governance, sessionKey, response, requestModel);
+    calls = extractGeminiToolCalls(response, requestModel);
+    if (calls.length > 0) {
+      const counts = governance.sessions.counts(sessionKey);
+      for (const call of calls) {
+        const c = classifyToolCall(
+          { name: call.function_name, argumentsJson: call.arguments },
+          counts,
+          governance.rules
+        );
+        call.action_class = c.action_class;
+        call.decision = c.decision;
+        call.triggers = c.triggers;
+        call.reasons = c.reasons;
+        call.unknown_tool = c.unknown_tool;
+
+        const kind = sessionEventKind(call.function_name);
+        if (kind) {
+          governance.sessions.record(sessionKey, kind);
+          if (kind === "send") counts.sends += 1;
+          else counts.deletes += 1;
+        }
+      }
+
+      corpus?.record(calls);
+      req.log.info(
+        {
+          api: "gemini",
+          response_id: calls[0].response_id,
+          model: calls[0].response_model ?? requestModel,
+          tool_calls: calls.map((c) => c.function_name),
+          decisions: calls.map((c) => c.decision),
+          held: calls.filter((c) => c.decision === "HOLD").map((c) => c.function_name),
+        },
+        "tool calls observed"
+      );
+    }
+  } catch (err) {
+    req.log.warn({ err: String(err) }, "gemini inspection skipped");
+  }
+
+  const auditDecisions = (holdId?: string) => {
+    for (const call of calls) {
+      governance.audit?.append({
+        type: "decision",
+        ts: new Date().toISOString(),
+        response_id: call.response_id,
+        model: call.response_model ?? requestModel,
+        function_name: call.function_name,
+        action_class: call.action_class,
+        triggers: call.triggers,
+        decision: call.decision,
+        enforced: governance.enforcing,
+        hold_id: call.decision === "HOLD" ? holdId : undefined,
+        args_bytes: call.args_bytes,
+      });
+    }
+  };
+
+  const anyHold = calls.some((c) => c.decision === "HOLD");
+  const willHold = anyHold && governance.holds !== null;
+
+  if (willHold) {
+    const { id, outcome } = governance.holds!.createAndWait({
+      responseBody: result.body,
+      calls,
+      timeoutMs: governance.holdTimeoutMs,
+      model: calls[0]?.response_model ?? requestModel,
+      responseId: calls[0]?.response_id,
+    });
+    auditDecisions(id);
+    governance.audit?.append({
+      type: "hold_transition",
+      ts: new Date().toISOString(),
+      hold_id: id,
+      status: "PENDING",
+    });
+
+    req.raw.once("close", () => governance.holds?.clientClosed(id));
+
+    const hold = governance.holds!.get(id);
+    if (hold) {
+      void governance.notifier?.notifyHold(hold, governance.holdTimeoutMs / 1000);
+      req.log.info(
+        { hold_id: id, api: "gemini", approve: `phinq approve ${id}`, deny: `phinq deny ${id}` },
+        "awaiting operator decision"
+      );
+    }
+
+    const decision = await outcome;
+    req.log.info(
+      { hold_id: id, outcome: decision, latency_ms: Date.now() - started },
+      "hold completed"
+    );
+
+    if (decision === "APPROVED") {
+      reply.code(result.status).headers(result.headers).send(result.body);
+      return;
+    }
+    const reason = decision === "DENIED" ? "denied" : "timeout";
+    const denial = syntheticGeminiDenial(result.body.toString("utf8"), ct, reason);
+    reply.code(200).header("content-type", denial.contentType).send(denial.body);
+    return;
+  }
+
+  if (calls.length > 0) auditDecisions();
+  reply.code(result.status).headers(result.headers).send(result.body);
+}
+
 async function blindPassthrough(
   req: FastifyRequest,
   reply: FastifyReply,
-  config: ProxyConfig
+  config: ProxyConfig,
+  route?: { upstream?: string; path?: string }
 ): Promise<void> {
-  const result = await forwardOrFail(req, reply, config, { started: Date.now() });
+  const result = await forwardOrFail(req, reply, config, { started: Date.now() }, route);
   if (!result) return;
   reply.code(result.status).headers(result.headers).send(result.body);
 }
@@ -842,7 +1209,8 @@ async function forwardOrFail(
   reply: FastifyReply,
   config: ProxyConfig,
   meta: { model?: string; started: number },
-  route?: { upstream?: string; path?: string }
+  route?: { upstream?: string; path?: string },
+  bodyOverride?: Buffer
 ): Promise<UpstreamResult | null> {
   try {
     const result = await forwardToUpstream(
@@ -850,14 +1218,14 @@ async function forwardOrFail(
         method: req.method,
         path: route?.path ?? normalizeUpstreamPath(req.url),
         headers: req.headers,
-        body: req.body as Buffer | undefined,
+        body: bodyOverride ?? (req.body as Buffer | undefined),
       },
       config,
       route?.upstream
     );
     req.log.info(
       {
-        path: req.url,
+        path: scrubUrl(req.url),
         model: meta.model,
         status: result.status,
         latency_ms: Date.now() - meta.started,
@@ -867,7 +1235,7 @@ async function forwardOrFail(
     return result;
   } catch (err) {
     const timedOut = err instanceof DOMException && err.name === "TimeoutError";
-    req.log.error({ path: req.url, err: String(err) }, "upstream failure");
+    req.log.error({ path: scrubUrl(req.url), err: String(err) }, "upstream failure");
     reply.code(timedOut ? 504 : 502).send({
       error: {
         message: timedOut

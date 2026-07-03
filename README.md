@@ -22,7 +22,7 @@
 
 Phinq sits between your agent and the world, **classifies every action** it tries to take, **holds the dangerous ones** for your approval, and writes a **tamper-evident audit log** of everything. Two ways to run it:
 
-- **Proxy** — drop it in front of any agent that speaks the OpenAI or Anthropic APIs (just set `base_url`). No agent-code change.
+- **Proxy** — drop it in front of any agent that speaks the OpenAI, Anthropic, or Gemini APIs (just set `base_url`). No agent-code change. No base URL to change? Gate any action from any language over plain HTTP (`POST /phinq/gate`).
 - **SDK** (`@phinq/governance`) — import it into a TypeScript agent and gate tool execution **in-process**, before it runs.
 
 Both share one deterministic decision engine, one audit format, and one set of risk rules.
@@ -62,7 +62,7 @@ Timeout (240s) → auto-deny
 npx @phinq/phinq
 ```
 
-The wizard detects what you run (Claude Code, Codex, Hermes, MCP…), asks three plain-English questions, and prints the one line to paste. It starts in **watch-only mode** — nothing is blocked until you say so. Then `phinq start` runs the checkpoint and `phinq watch` shows anything held.
+The wizard detects what you run (Claude Code, Codex, Gemini CLI, Hermes, MCP…), asks three plain-English questions, and prints the one line to paste. It starts in **watch-only mode** — nothing is blocked until you say so. Then `phinq start` runs the checkpoint and `phinq watch` shows anything held.
 
 ## Quick start — proxy (from source)
 
@@ -153,6 +153,7 @@ if (allowed) await runTool();
 | `PHINQ_HOST` | `127.0.0.1` | Bind address |
 | `PHINQ_UPSTREAM` | `https://openrouter.ai` | Upstream origin |
 | `PHINQ_ANTHROPIC_UPSTREAM` | `https://api.anthropic.com` | Anthropic upstream |
+| `PHINQ_GEMINI_UPSTREAM` | `https://generativelanguage.googleapis.com` | Gemini upstream |
 | `PHINQ_TOOLCALL_LOG` | `phinq-toolcalls.jsonl` | Tool call corpus; `""` disables |
 | `PHINQ_AUDIT_LOG` | `phinq-audit.jsonl` | Hash-chained audit log |
 | `PHINQ_ENFORCE` | unset | `1`/`true` turns on holds |
@@ -252,7 +253,20 @@ Applying writes phinq.yaml **and appends a `policy_change` entry to the audit ch
 
 ## Works with
 
-OpenRouter, OpenAI (Codex, Agents SDK), Anthropic, Mastra, LangChain/LangGraph, Vercel AI SDK, CrewAI, AutoGen, Pydantic AI, LlamaIndex, Hugging Face, and any runtime that speaks the OpenAI or Anthropic APIs with a configurable base URL.
+OpenRouter, OpenAI (Codex, Agents SDK), Anthropic (Claude Code, Claude Agent SDK), Google (Gemini CLI, google-genai, ADK), Mastra, LangChain/LangGraph, Vercel AI SDK, CrewAI, AutoGen, Pydantic AI, LlamaIndex, Hugging Face, and any runtime that speaks the OpenAI, Anthropic, or Gemini APIs with a configurable base URL.
+
+Four wire dialects, one decision engine: OpenAI Chat Completions (including streaming clients — Phinq governs the full response, then re-streams it as SSE), OpenAI Responses, Anthropic Messages, and Gemini `generateContent` (JSON, chunked-array, and SSE stream forms).
+
+**No configurable base URL?** Any language that can make an HTTP call gets the full checkpoint — classify, hold, phone approval, audit — with one request:
+
+```bash
+curl -X POST http://127.0.0.1:5100/phinq/gate \
+  -H 'content-type: application/json' \
+  -d '{"name": "delete_records", "arguments": {"ids": [1,2,3]}, "session_key": "my-agent"}'
+# → {"allowed": false, "resolution": "DENIED", "hold_id": "…", "classification": {…}}
+```
+
+Call it before executing a tool; execute only if `allowed` is true. In watch-only mode it never blocks (`"shadow": true`), so you can adopt it incrementally. `POST /phinq/classify` is the same lookup with no side effects — useful for dry runs.
 
 Already running **LiteLLM**? Chain the proxies or drop in the Phinq guardrail — see [docs/litellm.md](docs/litellm.md). Python-side gating is `pip install phinq` ([python/](python/)).
 

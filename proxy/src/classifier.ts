@@ -234,8 +234,16 @@ const SHELL_PATTERNS: { pattern: RegExp; finding: ArgFinding }[] = [
   },
 ];
 
-/** Paths that constitute the governance layer itself (DISABLE_SAFEGUARDS). */
-const SAFEGUARD_PATHS = /phinq\.yaml|phinq-toolcalls|audit.*\.jsonl|phinq[-_]?audit/i;
+/**
+ * References to the governance layer itself → DISABLE_SAFEGUARDS. Covers the
+ * policy (phinq.yaml/.env), the audit chain + corpus, the hold/session state,
+ * AND the phinq-governance skill definition. An agent must not be able to
+ * quietly read, edit, or delete the rules that constrain it — self-modification
+ * of the safety net is held the same as deleting the audit log. Matched against
+ * every argument string, so a tool arg like {"name":"phinq-governance"} counts.
+ */
+const SAFEGUARD_PATHS =
+  /phinq\.ya?ml|phinq\.env|phinq[-_]config|phinq[-_]toolcalls|phinq[-_]?audit|audit.*\.jsonl|phinq[-_]holds|phinq[-_]session|phinq[-_]governance|(^|[\s/"'=([])\.phinq(?=[/\\"'\s)\]]|$)/i;
 
 /** Argument keys that carry recipients for outbound communications. */
 const RECIPIENT_KEYS = ["to", "recipients", "emails", "cc", "bcc", "targets"];
