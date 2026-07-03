@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * `phinq-mcp` — wrap any stdio MCP server with the Phinq checkpoint.
  *

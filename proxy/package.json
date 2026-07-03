@@ -1,6 +1,6 @@
 {
   "name": "@phinq/phinq",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "The runtime checkpoint for AI agents \u2014 inspect every tool call, hold the irreversible for approval, keep verifiable evidence of human oversight.",
   "type": "module",
   "main": "dist/index.js",
