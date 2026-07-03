@@ -1,5 +1,6 @@
 /**
- * `npx phinq` — the two-minute setup.
+ * `npx @phinq/phinq` — the two-minute setup. (Scoped interim name while
+ *  the bare `phinq` package name request is pending with npm support.)
  *
  * A plain-English wizard for people who built an automation and want to
  * sleep at night. No yaml knowledge required: it detects what you run,
@@ -53,7 +54,7 @@ export function snippetFor(runtimeId: string): string {
         `  ANTHROPIC_BASE_URL=${PROXY_URL} claude`,
         "",
         "Or protect its MCP tools instead — wrap any server in your MCP config:",
-        `  "command": "npx", "args": ["-y", "phinq-mcp", "--enforce", "--", "<the original command>"]`,
+        `  "command": "npx", "args": ["-y", "-p", "@phinq/phinq", "phinq-mcp", "--enforce", "--", "<the original command>"]`,
       ].join("\n");
     case "codex":
       return [
@@ -99,7 +100,7 @@ export interface InitAnswers {
 /** ~/.phinq/phinq.env — everything the proxy needs, one folder, no yaml. */
 export function buildEnvFile(a: InitAnswers, phinqDir: string): string {
   const lines = [
-    "# Written by `npx phinq` — safe to edit. Loaded by `phinq start`.",
+    "# Written by `npx @phinq/phinq` — safe to edit. Loaded by `phinq start`.",
     `PHINQ_CONFIG=${join(phinqDir, "phinq.yaml")}`,
     `PHINQ_AUDIT_LOG=${join(phinqDir, "audit.jsonl")}`,
     `PHINQ_TOOLCALL_LOG=${join(phinqDir, "toolcalls.jsonl")}`,
@@ -121,7 +122,7 @@ export function buildEnvFile(a: InitAnswers, phinqDir: string): string {
 
 export function starterYaml(): string {
   return [
-    "# Phinq rules — written by `npx phinq`. Everything here is optional.",
+    "# Phinq rules — written by `npx @phinq/phinq`. Everything here is optional.",
     "# Docs: https://www.phinq.co/docs",
     "thresholds:",
     "  external_comm_volume: 3   # hold the 4th outbound message in an hour",

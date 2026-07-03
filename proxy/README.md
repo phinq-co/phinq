@@ -5,7 +5,7 @@
 ## Two-minute start
 
 ```bash
-npx phinq
+npx @phinq/phinq
 ```
 
 The setup wizard detects what you run (Claude Code, Codex, Hermes, MCP servers…), asks three plain-English questions, and prints the one line to paste. Then:
@@ -23,7 +23,7 @@ Your existing API key keeps working — Phinq passes it through and never stores
 - **Approve/Deny from wherever you are** — terminal, Telegram, or Slack. No answer in time = auto-deny.
 - **A record you can prove** — hash-chained audit log; `phinq report` turns it into a human-oversight report (false-hold rate, damage prevented, token spend).
 - **A checkpoint that learns** — `phinq learn` turns your approve/deny history into cited policy proposals.
-- **MCP gateway** — wrap any MCP server: `npx phinq-mcp --enforce -- <server command>`.
+- **MCP gateway** — wrap any MCP server: `npx -p @phinq/phinq phinq-mcp --enforce -- <server command>`.
 
 ## Everything else
 

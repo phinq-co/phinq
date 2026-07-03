@@ -1,5 +1,5 @@
 {
-  "name": "phinq",
+  "name": "@phinq/phinq",
   "version": "1.0.0",
   "description": "The runtime checkpoint for AI agents \u2014 inspect every tool call, hold the irreversible for approval, keep verifiable evidence of human oversight.",
   "type": "module",
@@ -36,7 +36,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/phinq-co/phinq.git"
+    "url": "git+https://github.com/phinq-co/phinq.git"
   },
   "homepage": "https://www.phinq.co",
   "keywords": [

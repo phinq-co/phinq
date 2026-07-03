@@ -59,7 +59,7 @@ Timeout (240s) → auto-deny
 ## Quick start — two minutes, no config
 
 ```bash
-npx phinq
+npx @phinq/phinq
 ```
 
 The wizard detects what you run (Claude Code, Codex, Hermes, MCP…), asks three plain-English questions, and prints the one line to paste. It starts in **watch-only mode** — nothing is blocked until you say so. Then `phinq start` runs the checkpoint and `phinq watch` shows anything held.
@@ -116,7 +116,7 @@ Wrap **any stdio MCP server** with the checkpoint — no agent or server changes
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "phinq-mcp", "--enforce", "--",
+      "args": ["-y", "-p", "@phinq/phinq", "phinq-mcp", "--enforce", "--",
                "npx", "-y", "@modelcontextprotocol/server-filesystem", "/data"]
     }
   }
