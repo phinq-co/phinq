@@ -237,9 +237,14 @@ export async function runInit(): Promise<number> {
   console.log(`\n─── Connect ${runtime.name} ───────────────────────────────\n`);
   console.log(snippetFor(runtime.id));
   console.log(`\n─── Run it ─────────────────────────────────────────────\n`);
-  console.log("  phinq start          # starts the checkpoint (Ctrl-C stops it)");
+  console.log("  phinq start          # starts the checkpoint (keeps running — Ctrl-C stops it)");
   console.log("  phinq watch          # live view of anything held");
   console.log("  phinq learn          # after a while: let your decisions tune the rules");
+  console.log(
+    "\n`phinq start` stays running in this terminal the whole time your agent is active — " +
+      "that's what lets it watch every action. Open a NEW terminal tab for `phinq watch` " +
+      "or anything else, and leave this one alone."
+  );
   console.log(
     `\nMode: ${answers.enforce ? "HOLD — risky actions wait for you" : "watch only — nothing blocked"}. ` +
       `Change any time in ${envPath}.\n`

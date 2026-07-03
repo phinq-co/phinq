@@ -6,6 +6,8 @@ The runtime checkpoint for AI agents — deterministic tool-call risk classifica
 pip install phinq
 ```
 
+Requires **Python 3.10+**. If that fails with `No matching distribution found`, check your Python version (`python3 --version`) — macOS's built-in Python is often 3.9. Install a newer one (e.g. `brew install python@3.11`) and use that interpreter's `pip` instead.
+
 ## Gate a tool execution
 
 ```python
