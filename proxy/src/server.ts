@@ -29,7 +29,7 @@ import { CompositeNotifier, SlackNotifier, type HoldNotifier } from "./slack.js"
 import { AuditLog } from "./audit.js";
 import { timingSafeEqual } from "node:crypto";
 
-export const VERSION = "1.2.0";
+export const VERSION = "1.2.1";
 
 interface Governance {
   rules: PhinqRulesConfig["rules"];
@@ -279,6 +279,19 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
     return true;
   };
 
+  // The language-agnostic gate is open by default (localhost trust model). If
+  // PHINQ_GATE_TOKEN is set, require it — defense-in-depth for 0.0.0.0 binds.
+  const requireGateAuth = (req: FastifyRequest, reply: FastifyReply): boolean => {
+    if (!config.gateToken) return true; // unset = open, unchanged behavior
+    const expected = `Bearer ${config.gateToken}`;
+    const got = req.headers.authorization ?? "";
+    if (got.length !== expected.length || !timingSafeEqual(Buffer.from(got), Buffer.from(expected))) {
+      reply.code(401).send({ error: { message: "bad or missing gate token", code: "unauthorized" } });
+      return false;
+    }
+    return true;
+  };
+
   app.get("/phinq/holds", (req, reply) => {
     if (!requireAuth(req, reply)) return;
     const now = Date.now();
@@ -373,6 +386,7 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
   };
 
   app.post("/phinq/classify", (req, reply) => {
+    if (!requireGateAuth(req, reply)) return;
     const g = parseGateBody(req, reply);
     if (!g) return;
     const c = classifyToolCall(
@@ -384,6 +398,7 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
   });
 
   app.post("/phinq/gate", async (req, reply) => {
+    if (!requireGateAuth(req, reply)) return;
     const g = parseGateBody(req, reply);
     if (!g) return;
     const started = Date.now();
@@ -488,14 +503,14 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
   // log); enforcement on this path is a follow-up.
   for (const path of ["/v1/responses", "/api/v1/responses"]) {
     app.post(path, (req, reply) =>
-      governedResponses(req, reply, config, corpus, governance)
+      governDialect(req, reply, config, corpus, governance, RESPONSES_DIALECT)
     );
   }
 
   // Anthropic Messages API governed path (the Anthropic SDK and Claude-native
   // agents). Forwards to the Anthropic upstream, not OpenRouter.
   app.post("/v1/messages", (req, reply) =>
-    governedMessages(req, reply, config, corpus, governance)
+    governDialect(req, reply, config, corpus, governance, MESSAGES_DIALECT)
   );
 
   // Gemini dialect (Gemini CLI, google-genai SDKs, Google ADK). The action verb
@@ -509,7 +524,7 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
   //  - everything else (models list, countTokens…) → blind-proxy to Gemini.
   const geminiDispatch = (req: FastifyRequest, reply: FastifyReply) => {
     if (req.method === "POST" && isGeminiGenerateContent(req.url)) {
-      return governedGemini(req, reply, config, corpus, governance);
+      return governDialect(req, reply, config, corpus, governance, GEMINI_DIALECT);
     }
     if (req.method === "POST" && /\/openai\/chat\/completions$/i.test(req.url.split("?")[0])) {
       return governedChatCompletions(req, reply, config, corpus, governance, {
@@ -531,7 +546,7 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
   // rather than misrouted to OpenRouter as an OpenAI-style request.
   app.all("/v1/*", (req, reply) => {
     if (req.method === "POST" && isGeminiGenerateContent(req.url)) {
-      return governedGemini(req, reply, config, corpus, governance);
+      return governDialect(req, reply, config, corpus, governance, GEMINI_DIALECT);
     }
     return blindPassthrough(req, reply, config);
   });
@@ -822,19 +837,99 @@ async function streamHeldOutcome(
 }
 
 /**
- * Governed handler for the OpenAI Responses API (`/responses`). Tool calls
- * live in the response's top-level `output[]` (see responses.ts) instead of
- * `choices[].message.tool_calls`. Inspection is shadow-only: classify, record
- * to the corpus + audit chain, relay the original bytes unchanged. Holding on
- * this path (synthesizing a Responses-shaped denial, incl. SSE) is a follow-up;
- * until then a HOLD verdict is logged as would-hold and passed through.
+ * A response dialect: the handful of things that differ between the OpenAI
+ * Responses, Anthropic Messages, and Gemini generateContent surfaces. Every
+ * other step — forward, session bookkeeping, classify, corpus, audit, and the
+ * atomic hold — is identical and lives once in {@link governDialect}.
+ *
+ * The chat-completions path is deliberately NOT a dialect here: it also has to
+ * coerce the upstream to non-streaming and re-emit SSE (including a hijacked,
+ * heart-beating socket during a hold), which has no analog on these three. See
+ * {@link governedChatCompletions}. Likewise the language-agnostic `/phinq/gate`
+ * has no upstream to forward to. Folding either into this core would trade real
+ * regression risk for cosmetic dedup.
  */
-async function governedResponses(
+interface Dialect {
+  /** Short label for logs (`api: "messages"`). */
+  api: string;
+  /** Upstream route override; undefined = default upstream + normalized path. */
+  route?: (req: FastifyRequest, config: ProxyConfig) => { upstream?: string; path?: string } | undefined;
+  /** Which credential(s) key the session for this dialect. */
+  sessionAuth: (req: FastifyRequest) => string | undefined;
+  /** The request model — from the body, or (Gemini) the URL. */
+  requestModel: (req: FastifyRequest, parsedReq: Record<string, unknown> | null) => string | undefined;
+  /** Parse the upstream response body (JSON or the dialect's SSE) into an object. */
+  parseResponse: (bodyText: string, contentType: string) => unknown;
+  /** Extract observed tool calls from the parsed response. */
+  extractCalls: (
+    responseObj: unknown,
+    requestModel: string | undefined,
+    req: FastifyRequest
+  ) => ObservedToolCall[];
+  /** Build a dialect-shaped denial (no tool call) in the held body's wire form. */
+  denial: (
+    heldBodyText: string,
+    contentType: string,
+    reason: "denied" | "timeout"
+  ) => { body: string; contentType: string };
+}
+
+const RESPONSES_DIALECT: Dialect = {
+  api: "responses",
+  sessionAuth: (req) => req.headers.authorization,
+  requestModel: (_req, parsedReq) =>
+    typeof parsedReq?.model === "string" ? parsedReq.model : undefined,
+  parseResponse: (bodyText, ct) => parseResponsesBody(bodyText, ct),
+  extractCalls: (responseObj, requestModel, req) =>
+    extractResponsesToolCalls(responseObj, requestModel, (t) =>
+      req.log.warn({ output_item_type: t }, "unmodeled responses tool-call type")
+    ),
+  denial: (heldBodyText, ct, reason) => syntheticResponsesDenial(heldBodyText, ct, reason),
+};
+
+const MESSAGES_DIALECT: Dialect = {
+  api: "messages",
+  // Anthropic Messages forwards to the Anthropic upstream, path preserved
+  // (the real endpoint is /v1/messages, not /api/v1/...).
+  route: (req, config) => ({ upstream: config.anthropicUpstream, path: req.url }),
+  // Anthropic authenticates with x-api-key, not Bearer.
+  sessionAuth: (req) => (req.headers["x-api-key"] as string | undefined) ?? req.headers.authorization,
+  requestModel: (_req, parsedReq) =>
+    typeof parsedReq?.model === "string" ? parsedReq.model : undefined,
+  parseResponse: (bodyText, ct) => parseMessagesBody(bodyText, ct),
+  extractCalls: (responseObj, requestModel) => extractMessagesToolCalls(responseObj, requestModel),
+  denial: (heldBodyText, ct, reason) => syntheticMessagesDenial(heldBodyText, ct, reason),
+};
+
+const GEMINI_DIALECT: Dialect = {
+  api: "gemini",
+  route: (req, config) => ({ upstream: config.geminiUpstream, path: req.url }),
+  // Gemini auth: x-goog-api-key header, OAuth Bearer, or ?key= in the URL.
+  sessionAuth: (req) => {
+    const keyParam = /[?&]key=([^&]+)/.exec(req.url)?.[1];
+    return (req.headers["x-goog-api-key"] as string | undefined) ?? req.headers.authorization ?? keyParam;
+  },
+  // The model is in the URL, not the body: /v1beta/models/<model>:generateContent
+  requestModel: (req) => geminiModelFromUrl(req.url),
+  parseResponse: (bodyText, ct) => parseGeminiBody(bodyText, ct),
+  extractCalls: (responseObj, requestModel) => extractGeminiToolCalls(responseObj, requestModel),
+  denial: (heldBodyText, ct, reason) => syntheticGeminiDenial(heldBodyText, ct, reason),
+};
+
+/**
+ * Shared governance flow for the non-streaming dialects (Responses, Messages,
+ * Gemini). Forward → classify every tool call → atomically hold on any HOLD →
+ * relay the original bytes on approve, a dialect-shaped denial otherwise.
+ * Streamed Gemini bodies are buffered whole upstream, so holds stay atomic.
+ * Fail-open throughout: inspection errors never block the relayed response.
+ */
+async function governDialect(
   req: FastifyRequest,
   reply: FastifyReply,
   config: ProxyConfig,
   corpus: ToolCallCorpus | null,
-  governance: Governance
+  governance: Governance,
+  dialect: Dialect
 ): Promise<void> {
   const body = req.body as Buffer | undefined;
   const started = Date.now();
@@ -847,14 +942,21 @@ async function governedResponses(
       parsedReq = null;
     }
   }
-  const requestModel = typeof parsedReq?.model === "string" ? parsedReq.model : undefined;
+  const requestModel = dialect.requestModel(req, parsedReq);
 
-  const result = await forwardOrFail(req, reply, config, { model: requestModel, started });
+  const result = await forwardOrFail(
+    req,
+    reply,
+    config,
+    { model: requestModel, started },
+    dialect.route?.(req, config)
+  );
   if (!result) return;
 
-  const sessionKey = sessionKeyFromAuth(req.headers.authorization);
+  const sessionKey = sessionKeyFromAuth(dialect.sessionAuth(req));
 
   if (result.status !== 200) {
+    // Upstream errors feed the AFTER_ERROR_BULK window, then pass through.
     try {
       governance.sessions.record(sessionKey, "error");
     } catch {
@@ -864,15 +966,12 @@ async function governedResponses(
     return;
   }
 
-  // Inspect + classify (shadow). Fail-open: never block the relayed response.
+  const ct = String(result.headers["content-type"] ?? "");
   let calls: ObservedToolCall[] = [];
   try {
-    const ct = String(result.headers["content-type"] ?? "");
-    const responseObj = parseResponsesBody(result.body.toString("utf8"), ct);
+    const responseObj = dialect.parseResponse(result.body.toString("utf8"), ct);
     recordUsage(governance, sessionKey, responseObj, requestModel);
-    calls = extractResponsesToolCalls(responseObj, requestModel, (t) =>
-      req.log.warn({ output_item_type: t }, "unmodeled responses tool-call type")
-    );
+    calls = dialect.extractCalls(responseObj, requestModel, req);
     if (calls.length > 0) {
       const counts = governance.sessions.counts(sessionKey);
       for (const call of calls) {
@@ -898,7 +997,7 @@ async function governedResponses(
       corpus?.record(calls);
       req.log.info(
         {
-          api: "responses",
+          api: dialect.api,
           response_id: calls[0].response_id,
           model: calls[0].response_model ?? requestModel,
           tool_calls: calls.map((c) => c.function_name),
@@ -909,7 +1008,7 @@ async function governedResponses(
       );
     }
   } catch (err) {
-    req.log.warn({ err: String(err) }, "responses inspection skipped");
+    req.log.warn({ err: String(err) }, `${dialect.api} inspection skipped`);
   }
 
   // One audit entry per classified call; reused for both hold and pass-through.
@@ -931,12 +1030,10 @@ async function governedResponses(
     }
   };
 
-  // Enforcement: any HOLD holds the whole response until the operator decides.
   const anyHold = calls.some((c) => c.decision === "HOLD");
   const willHold = anyHold && governance.holds !== null;
 
   if (willHold) {
-    const ct = String(result.headers["content-type"] ?? "");
     const { id, outcome } = governance.holds!.createAndWait({
       responseBody: result.body,
       calls,
@@ -959,7 +1056,7 @@ async function governedResponses(
     if (hold) {
       void governance.notifier?.notifyHold(hold, governance.holdTimeoutMs / 1000);
       req.log.info(
-        { hold_id: id, api: "responses", approve: `phinq approve ${id}`, deny: `phinq deny ${id}` },
+        { hold_id: id, api: dialect.api, approve: `phinq approve ${id}`, deny: `phinq deny ${id}` },
         "awaiting operator decision"
       );
     }
@@ -974,330 +1071,10 @@ async function governedResponses(
       reply.code(result.status).headers(result.headers).send(result.body);
       return;
     }
-    // DENIED / EXPIRED_TIMEOUT / EXPIRED_CLIENT → Responses-shaped denial so the
+    // DENIED / EXPIRED_TIMEOUT / EXPIRED_CLIENT → dialect-shaped denial so the
     // agent sees a message with no tool call and does not execute the action.
     const reason = decision === "DENIED" ? "denied" : "timeout";
-    const denial = syntheticResponsesDenial(result.body.toString("utf8"), ct, reason);
-    reply.code(200).header("content-type", denial.contentType).send(denial.body);
-    return;
-  }
-
-  if (calls.length > 0) auditDecisions();
-  reply.code(result.status).headers(result.headers).send(result.body);
-}
-
-async function governedMessages(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  config: ProxyConfig,
-  corpus: ToolCallCorpus | null,
-  governance: Governance
-): Promise<void> {
-  const body = req.body as Buffer | undefined;
-  const started = Date.now();
-
-  let parsedReq: Record<string, unknown> | null = null;
-  if (body) {
-    try {
-      parsedReq = JSON.parse(body.toString("utf8"));
-    } catch {
-      parsedReq = null;
-    }
-  }
-  const requestModel = typeof parsedReq?.model === "string" ? parsedReq.model : undefined;
-
-  // Anthropic Messages forwards to the Anthropic upstream with the path
-  // preserved (real endpoint is /v1/messages, not /api/v1/...).
-  const result = await forwardOrFail(
-    req,
-    reply,
-    config,
-    { model: requestModel, started },
-    { upstream: config.anthropicUpstream, path: req.url }
-  );
-  if (!result) return;
-
-  // Anthropic authenticates with x-api-key, not Bearer; key the session off it.
-  const authHeader =
-    (req.headers["x-api-key"] as string | undefined) ?? req.headers.authorization;
-  const sessionKey = sessionKeyFromAuth(authHeader);
-
-  if (result.status !== 200) {
-    try {
-      governance.sessions.record(sessionKey, "error");
-    } catch {
-      /* session bookkeeping is fail-open */
-    }
-    reply.code(result.status).headers(result.headers).send(result.body);
-    return;
-  }
-
-  // Inspect + classify. Fail-open: never block the relayed response.
-  let calls: ObservedToolCall[] = [];
-  try {
-    const ct = String(result.headers["content-type"] ?? "");
-    const message = parseMessagesBody(result.body.toString("utf8"), ct);
-    recordUsage(governance, sessionKey, message, requestModel);
-    calls = extractMessagesToolCalls(message, requestModel);
-    if (calls.length > 0) {
-      const counts = governance.sessions.counts(sessionKey);
-      for (const call of calls) {
-        const c = classifyToolCall(
-          { name: call.function_name, argumentsJson: call.arguments },
-          counts,
-          governance.rules
-        );
-        call.action_class = c.action_class;
-        call.decision = c.decision;
-        call.triggers = c.triggers;
-        call.reasons = c.reasons;
-        call.unknown_tool = c.unknown_tool;
-
-        const kind = sessionEventKind(call.function_name);
-        if (kind) {
-          governance.sessions.record(sessionKey, kind);
-          if (kind === "send") counts.sends += 1;
-          else counts.deletes += 1;
-        }
-      }
-
-      corpus?.record(calls);
-      req.log.info(
-        {
-          api: "messages",
-          response_id: calls[0].response_id,
-          model: calls[0].response_model ?? requestModel,
-          tool_calls: calls.map((c) => c.function_name),
-          decisions: calls.map((c) => c.decision),
-          held: calls.filter((c) => c.decision === "HOLD").map((c) => c.function_name),
-        },
-        "tool calls observed"
-      );
-    }
-  } catch (err) {
-    req.log.warn({ err: String(err) }, "messages inspection skipped");
-  }
-
-  const auditDecisions = (holdId?: string) => {
-    for (const call of calls) {
-      governance.audit?.append({
-        type: "decision",
-        ts: new Date().toISOString(),
-        response_id: call.response_id,
-        model: call.response_model ?? requestModel,
-        function_name: call.function_name,
-        action_class: call.action_class,
-        triggers: call.triggers,
-        decision: call.decision,
-        enforced: governance.enforcing,
-        hold_id: call.decision === "HOLD" ? holdId : undefined,
-        args_bytes: call.args_bytes,
-      });
-    }
-  };
-
-  const anyHold = calls.some((c) => c.decision === "HOLD");
-  const willHold = anyHold && governance.holds !== null;
-
-  if (willHold) {
-    const ct = String(result.headers["content-type"] ?? "");
-    const { id, outcome } = governance.holds!.createAndWait({
-      responseBody: result.body,
-      calls,
-      timeoutMs: governance.holdTimeoutMs,
-      model: calls[0]?.response_model ?? requestModel,
-      responseId: calls[0]?.response_id,
-    });
-    auditDecisions(id);
-    governance.audit?.append({
-      type: "hold_transition",
-      ts: new Date().toISOString(),
-      hold_id: id,
-      status: "PENDING",
-    });
-
-    req.raw.once("close", () => governance.holds?.clientClosed(id));
-
-    const hold = governance.holds!.get(id);
-    if (hold) {
-      void governance.notifier?.notifyHold(hold, governance.holdTimeoutMs / 1000);
-      req.log.info(
-        { hold_id: id, api: "messages", approve: `phinq approve ${id}`, deny: `phinq deny ${id}` },
-        "awaiting operator decision"
-      );
-    }
-
-    const decision = await outcome;
-    req.log.info(
-      { hold_id: id, outcome: decision, latency_ms: Date.now() - started },
-      "hold completed"
-    );
-
-    if (decision === "APPROVED") {
-      reply.code(result.status).headers(result.headers).send(result.body);
-      return;
-    }
-    const reason = decision === "DENIED" ? "denied" : "timeout";
-    const denial = syntheticMessagesDenial(result.body.toString("utf8"), ct, reason);
-    reply.code(200).header("content-type", denial.contentType).send(denial.body);
-    return;
-  }
-
-  if (calls.length > 0) auditDecisions();
-  reply.code(result.status).headers(result.headers).send(result.body);
-}
-
-/**
- * Governed handler for Gemini generateContent / streamGenerateContent —
- * fourth dialect (Gemini CLI, google-genai SDKs, Google ADK). Same governance
- * core; only extraction, auth, the upstream, and the denial wire-form differ.
- * Streamed bodies (JSON-array or SSE) are buffered whole, so holds stay atomic.
- */
-async function governedGemini(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  config: ProxyConfig,
-  corpus: ToolCallCorpus | null,
-  governance: Governance
-): Promise<void> {
-  const started = Date.now();
-
-  // The model is in the URL, not the body: /v1beta/models/<model>:generateContent
-  const requestModel = geminiModelFromUrl(req.url);
-
-  const result = await forwardOrFail(
-    req,
-    reply,
-    config,
-    { model: requestModel, started },
-    { upstream: config.geminiUpstream, path: req.url }
-  );
-  if (!result) return;
-
-  // Gemini auth: x-goog-api-key header, OAuth Bearer, or ?key= in the URL.
-  // Whichever is present keys the session (hashed — never logged raw).
-  const keyParam = /[?&]key=([^&]+)/.exec(req.url)?.[1];
-  const authHeader =
-    (req.headers["x-goog-api-key"] as string | undefined) ??
-    req.headers.authorization ??
-    keyParam;
-  const sessionKey = sessionKeyFromAuth(authHeader);
-
-  if (result.status !== 200) {
-    try {
-      governance.sessions.record(sessionKey, "error");
-    } catch {
-      /* session bookkeeping is fail-open */
-    }
-    reply.code(result.status).headers(result.headers).send(result.body);
-    return;
-  }
-
-  let calls: ObservedToolCall[] = [];
-  const ct = String(result.headers["content-type"] ?? "");
-  try {
-    const response = parseGeminiBody(result.body.toString("utf8"), ct);
-    recordUsage(governance, sessionKey, response, requestModel);
-    calls = extractGeminiToolCalls(response, requestModel);
-    if (calls.length > 0) {
-      const counts = governance.sessions.counts(sessionKey);
-      for (const call of calls) {
-        const c = classifyToolCall(
-          { name: call.function_name, argumentsJson: call.arguments },
-          counts,
-          governance.rules
-        );
-        call.action_class = c.action_class;
-        call.decision = c.decision;
-        call.triggers = c.triggers;
-        call.reasons = c.reasons;
-        call.unknown_tool = c.unknown_tool;
-
-        const kind = sessionEventKind(call.function_name);
-        if (kind) {
-          governance.sessions.record(sessionKey, kind);
-          if (kind === "send") counts.sends += 1;
-          else counts.deletes += 1;
-        }
-      }
-
-      corpus?.record(calls);
-      req.log.info(
-        {
-          api: "gemini",
-          response_id: calls[0].response_id,
-          model: calls[0].response_model ?? requestModel,
-          tool_calls: calls.map((c) => c.function_name),
-          decisions: calls.map((c) => c.decision),
-          held: calls.filter((c) => c.decision === "HOLD").map((c) => c.function_name),
-        },
-        "tool calls observed"
-      );
-    }
-  } catch (err) {
-    req.log.warn({ err: String(err) }, "gemini inspection skipped");
-  }
-
-  const auditDecisions = (holdId?: string) => {
-    for (const call of calls) {
-      governance.audit?.append({
-        type: "decision",
-        ts: new Date().toISOString(),
-        response_id: call.response_id,
-        model: call.response_model ?? requestModel,
-        function_name: call.function_name,
-        action_class: call.action_class,
-        triggers: call.triggers,
-        decision: call.decision,
-        enforced: governance.enforcing,
-        hold_id: call.decision === "HOLD" ? holdId : undefined,
-        args_bytes: call.args_bytes,
-      });
-    }
-  };
-
-  const anyHold = calls.some((c) => c.decision === "HOLD");
-  const willHold = anyHold && governance.holds !== null;
-
-  if (willHold) {
-    const { id, outcome } = governance.holds!.createAndWait({
-      responseBody: result.body,
-      calls,
-      timeoutMs: governance.holdTimeoutMs,
-      model: calls[0]?.response_model ?? requestModel,
-      responseId: calls[0]?.response_id,
-    });
-    auditDecisions(id);
-    governance.audit?.append({
-      type: "hold_transition",
-      ts: new Date().toISOString(),
-      hold_id: id,
-      status: "PENDING",
-    });
-
-    req.raw.once("close", () => governance.holds?.clientClosed(id));
-
-    const hold = governance.holds!.get(id);
-    if (hold) {
-      void governance.notifier?.notifyHold(hold, governance.holdTimeoutMs / 1000);
-      req.log.info(
-        { hold_id: id, api: "gemini", approve: `phinq approve ${id}`, deny: `phinq deny ${id}` },
-        "awaiting operator decision"
-      );
-    }
-
-    const decision = await outcome;
-    req.log.info(
-      { hold_id: id, outcome: decision, latency_ms: Date.now() - started },
-      "hold completed"
-    );
-
-    if (decision === "APPROVED") {
-      reply.code(result.status).headers(result.headers).send(result.body);
-      return;
-    }
-    const reason = decision === "DENIED" ? "denied" : "timeout";
-    const denial = syntheticGeminiDenial(result.body.toString("utf8"), ct, reason);
+    const denial = dialect.denial(result.body.toString("utf8"), ct, reason);
     reply.code(200).header("content-type", denial.contentType).send(denial.body);
     return;
   }

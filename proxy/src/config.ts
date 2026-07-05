@@ -31,6 +31,13 @@ export interface ProxyConfig {
   /** Enforce HOLD decisions (component 4). Off = shadow mode. */
   enforce: boolean;
   /**
+   * Optional bearer token for the language-agnostic gate (`/phinq/gate`,
+   * `/phinq/classify`). Unset (default) = open, matching the documented
+   * localhost trust model. Set it to require `Authorization: Bearer <token>`
+   * — defense-in-depth for `PHINQ_HOST=0.0.0.0` deployments.
+   */
+  gateToken?: string;
+  /**
    * Approval window. Default 240s — must end before the agent's client gives
    * up (Hermes stale detector: 300s stock). Validation warns above 240.
    */
@@ -72,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ProxyConfig {
     holdDbPath: env.PHINQ_HOLD_DB ?? "phinq-holds.db",
     auditLogPath: env.PHINQ_AUDIT_LOG ?? "phinq-audit.jsonl",
     enforce: env.PHINQ_ENFORCE === "1" || env.PHINQ_ENFORCE === "true",
+    gateToken: env.PHINQ_GATE_TOKEN || undefined,
     holdTimeoutSeconds: intFromEnv(env.PHINQ_HOLD_TIMEOUT_S, 240),
     telegramBotToken: env.PHINQ_TELEGRAM_BOT_TOKEN || undefined,
     telegramChatId: env.PHINQ_TELEGRAM_CHAT_ID || undefined,

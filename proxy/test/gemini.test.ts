@@ -417,3 +417,52 @@ test("gate rejects non-object JSON bodies with 400 (not a 500 crash)", async () 
     }
   }
 });
+
+test("PHINQ_GATE_TOKEN, when set, guards /phinq/gate and /phinq/classify", async () => {
+  const tokenApp = buildServer({ ...baseConfig(), gateToken: "s3cret-gate" });
+  await tokenApp.ready();
+  try {
+    const body = JSON.stringify({ name: "list_files", arguments: { path: "." } });
+    for (const url of ["/phinq/gate", "/phinq/classify"]) {
+      // No token → 401
+      const noAuth = await tokenApp.inject({
+        method: "POST",
+        url,
+        headers: { "content-type": "application/json" },
+        payload: body,
+      });
+      assert.equal(noAuth.statusCode, 401, `${url} without token must be 401`);
+
+      // Wrong token → 401 (and no length-based timing leak crash on mismatch)
+      const wrong = await tokenApp.inject({
+        method: "POST",
+        url,
+        headers: { "content-type": "application/json", authorization: "Bearer nope" },
+        payload: body,
+      });
+      assert.equal(wrong.statusCode, 401, `${url} with wrong token must be 401`);
+
+      // Correct token → passes through
+      const ok = await tokenApp.inject({
+        method: "POST",
+        url,
+        headers: { "content-type": "application/json", authorization: "Bearer s3cret-gate" },
+        payload: body,
+      });
+      assert.equal(ok.statusCode, 200, `${url} with correct token must be 200`);
+    }
+  } finally {
+    await tokenApp.close();
+  }
+});
+
+test("gate is open when PHINQ_GATE_TOKEN is unset (default localhost trust)", async () => {
+  // shadowApp has no gateToken — a tokenless request must still be served.
+  const res = await shadowApp.inject({
+    method: "POST",
+    url: "/phinq/classify",
+    headers: { "content-type": "application/json" },
+    payload: JSON.stringify({ name: "list_files" }),
+  });
+  assert.equal(res.statusCode, 200);
+});

@@ -165,6 +165,7 @@ if (allowed) await runTool();
 | `PHINQ_TOOLCALL_LOG` | `phinq-toolcalls.jsonl` | Tool call corpus; `""` disables |
 | `PHINQ_AUDIT_LOG` | `phinq-audit.jsonl` | Hash-chained audit log |
 | `PHINQ_ENFORCE` | unset | `1`/`true` turns on holds |
+| `PHINQ_GATE_TOKEN` | unset | Optional bearer token for `/phinq/gate` + `/phinq/classify`. Unset = open (localhost trust); set it to require `Authorization: Bearer <token>` |
 | `PHINQ_HOLD_TIMEOUT_S` | `240` | Approval window |
 | `PHINQ_TELEGRAM_BOT_TOKEN` | unset | Bot token (env only) |
 | `PHINQ_TELEGRAM_CHAT_ID` | unset | Operator chat ID |
@@ -275,6 +276,8 @@ curl -X POST http://127.0.0.1:5100/phinq/gate \
 ```
 
 Call it before executing a tool; execute only if `allowed` is true. In watch-only mode it never blocks (`"shadow": true`), so you can adopt it incrementally. `POST /phinq/classify` is the same lookup with no side effects — useful for dry runs.
+
+The gate is open by default — the proxy binds to `127.0.0.1`, so only local processes can reach it. If you expose it (`PHINQ_HOST=0.0.0.0`), set `PHINQ_GATE_TOKEN` and send `Authorization: Bearer <token>` on gate/classify calls.
 
 Already running **LiteLLM**? Chain the proxies or drop in the Phinq guardrail — see [docs/litellm.md](docs/litellm.md). Python-side gating is `pip install phinq` ([python/](python/)).
 
