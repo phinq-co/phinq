@@ -17,12 +17,13 @@ import {
   parseGeminiBody,
   syntheticGeminiDenial,
   geminiModelFromUrl,
+  isGeminiGenerateContent,
 } from "./gemini.js";
 import { classifyToolCall, sessionEventKind } from "./classifier.js";
-import { chatCompletionToSSE, coerceNonStream } from "./sse.js";
+import { chatCompletionToSSE } from "./sse.js";
 import { SessionStore, sessionKeyFromAuth } from "./session.js";
 import { loadPhinqRules, type PhinqRulesConfig } from "./phinq-config.js";
-import { HoldStore, syntheticDenial } from "./holds.js";
+import { HoldStore, syntheticDenial, type HoldOutcome } from "./holds.js";
 import { TelegramNotifier } from "./telegram.js";
 import { CompositeNotifier, SlackNotifier, type HoldNotifier } from "./slack.js";
 import { AuditLog } from "./audit.js";
@@ -316,14 +317,28 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
   const parseGateBody = (
     req: FastifyRequest,
     reply: FastifyReply
-  ): { name: string; argumentsJson?: string; sessionKey: string; agent?: string } | null => {
-    let b: Record<string, unknown>;
+  ): {
+    name: string;
+    argumentsJson?: string;
+    argsParseOk: boolean;
+    sessionKey: string;
+    agent?: string;
+  } | null => {
+    let parsed: unknown;
     try {
-      b = JSON.parse(((req.body as Buffer) ?? Buffer.from("{}")).toString("utf8"));
+      parsed = JSON.parse(((req.body as Buffer) ?? Buffer.from("{}")).toString("utf8"));
     } catch {
       reply.code(400).send({ error: { message: "body must be JSON", code: "bad_request" } });
       return null;
     }
+    // JSON.parse accepts scalars/null/arrays; the gate needs a plain object.
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      reply
+        .code(400)
+        .send({ error: { message: "body must be a JSON object", code: "bad_request" } });
+      return null;
+    }
+    const b = parsed as Record<string, unknown>;
     const name = typeof b.name === "string" ? b.name.trim() : "";
     if (!name) {
       reply
@@ -331,11 +346,22 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
         .send({ error: { message: "missing required field: name", code: "bad_request" } });
       return null;
     }
+    // args_parse_ok follows from provenance: a client-sent string may be
+    // invalid JSON (validate once); an object we serialize always round-trips.
     let argumentsJson: string | undefined;
-    if (typeof b.arguments === "string") argumentsJson = b.arguments;
-    else if (b.arguments !== undefined) {
+    let argsParseOk = false;
+    if (typeof b.arguments === "string") {
+      argumentsJson = b.arguments;
+      try {
+        JSON.parse(argumentsJson);
+        argsParseOk = true;
+      } catch {
+        argsParseOk = false;
+      }
+    } else if (b.arguments !== undefined) {
       try {
         argumentsJson = JSON.stringify(b.arguments);
+        argsParseOk = argumentsJson !== undefined;
       } catch {
         argumentsJson = undefined;
       }
@@ -343,7 +369,7 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
     const sessionKey =
       "gate:" + (typeof b.session_key === "string" && b.session_key ? b.session_key : "default");
     const agent = typeof b.agent === "string" ? b.agent : undefined;
-    return { name, argumentsJson, sessionKey, agent };
+    return { name, argumentsJson, argsParseOk, sessionKey, agent };
   };
 
   app.post("/phinq/classify", (req, reply) => {
@@ -380,15 +406,7 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
       call_type: "gate",
       function_name: g.name,
       arguments: g.argumentsJson,
-      args_parse_ok: (() => {
-        if (g.argumentsJson === undefined) return false;
-        try {
-          JSON.parse(g.argumentsJson);
-          return true;
-        } catch {
-          return false;
-        }
-      })(),
+      args_parse_ok: g.argsParseOk,
       args_bytes: g.argumentsJson === undefined ? 0 : Buffer.byteLength(g.argumentsJson, "utf8"),
       action_class: c.action_class,
       decision: c.decision,
@@ -480,23 +498,43 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
     governedMessages(req, reply, config, corpus, governance)
   );
 
-  // Gemini generateContent dialect (Gemini CLI, google-genai SDKs, Google
-  // ADK). The action verb lives after a colon in the last path segment, which
-  // Fastify's router can't pattern-match — so one wildcard owns /v1beta and
-  // dispatches: generateContent/streamGenerateContent are governed, everything
-  // else (models list, countTokens…) blind-proxies to the Gemini upstream.
-  app.all("/v1beta/*", (req, reply) => {
-    if (req.method === "POST" && /:(stream)?generatecontent/i.test(req.url.split("?")[0])) {
+  // Gemini dialect (Gemini CLI, google-genai SDKs, Google ADK). The action verb
+  // lives after a colon in the last path segment, which Fastify's router can't
+  // pattern-match — so one wildcard owns each Gemini version prefix and
+  // dispatches by URL:
+  //  - generateContent / streamGenerateContent → governed as Gemini;
+  //  - /openai/chat/completions → Google's OpenAI-compat surface (OpenAI wire
+  //    shape on the Gemini upstream), governed with the chat dialect so it is
+  //    not a silent bypass;
+  //  - everything else (models list, countTokens…) → blind-proxy to Gemini.
+  const geminiDispatch = (req: FastifyRequest, reply: FastifyReply) => {
+    if (req.method === "POST" && isGeminiGenerateContent(req.url)) {
       return governedGemini(req, reply, config, corpus, governance);
+    }
+    if (req.method === "POST" && /\/openai\/chat\/completions$/i.test(req.url.split("?")[0])) {
+      return governedChatCompletions(req, reply, config, corpus, governance, {
+        upstream: config.geminiUpstream,
+        path: req.url,
+      });
     }
     return blindPassthrough(req, reply, config, {
       upstream: config.geminiUpstream,
       path: req.url,
     });
-  });
+  };
+  app.all("/v1beta/*", geminiDispatch);
+  app.all("/v1alpha/*", geminiDispatch);
 
-  // Everything else under /v1 and /api/v1 blind-proxies upstream.
-  app.all("/v1/*", (req, reply) => blindPassthrough(req, reply, config));
+  // Everything else under /v1 and /api/v1 blind-proxies to the default upstream
+  // — except a generateContent call from a google-genai client pinned to
+  // `api_version='v1'`, which must reach the Gemini upstream and be governed
+  // rather than misrouted to OpenRouter as an OpenAI-style request.
+  app.all("/v1/*", (req, reply) => {
+    if (req.method === "POST" && isGeminiGenerateContent(req.url)) {
+      return governedGemini(req, reply, config, corpus, governance);
+    }
+    return blindPassthrough(req, reply, config);
+  });
   app.all("/api/v1/*", (req, reply) => blindPassthrough(req, reply, config));
 
   // Test access to the enforcement internals (pressing Telegram buttons).
@@ -515,7 +553,8 @@ async function governedChatCompletions(
   reply: FastifyReply,
   config: ProxyConfig,
   corpus: ToolCallCorpus | null,
-  governance: Governance
+  governance: Governance,
+  route?: { upstream?: string; path?: string }
 ): Promise<void> {
   const body = req.body as Buffer | undefined;
   const started = Date.now();
@@ -533,9 +572,20 @@ async function governedChatCompletions(
 
   // The client asked to stream. Governance needs the whole body (to classify
   // tool calls and hold atomically), so we fetch a non-streamed completion
-  // upstream and re-stream the governed result back as SSE. See sse.ts.
+  // upstream and re-stream the governed result back as SSE (see sse.ts). Reuse
+  // the already-parsed body to build the non-stream forward body rather than
+  // decoding + parsing the same bytes a second time.
   const wantsStream = parsed?.stream === true;
-  const forwardBody = wantsStream && body ? coerceNonStream(body) : body;
+  const streamOptions = parsed?.stream_options;
+  const includeUsage =
+    wantsStream &&
+    typeof streamOptions === "object" &&
+    streamOptions !== null &&
+    (streamOptions as Record<string, unknown>).include_usage === true;
+  const forwardBody =
+    wantsStream && parsed
+      ? Buffer.from(JSON.stringify({ ...parsed, stream: false, stream_options: undefined }))
+      : body;
 
   const requestModel = typeof parsed?.model === "string" ? parsed.model : undefined;
 
@@ -544,7 +594,7 @@ async function governedChatCompletions(
     reply,
     config,
     { model: requestModel, started },
-    undefined,
+    route,
     forwardBody
   );
   if (!result) return; // error response already sent
@@ -558,7 +608,7 @@ async function governedChatCompletions(
         .header("content-type", "text/event-stream")
         .header("cache-control", "no-cache")
         .header("connection", "keep-alive")
-        .send(chatCompletionToSSE(buf));
+        .send(chatCompletionToSSE(buf, { includeUsage }));
     } else if (headers) {
       reply.code(status).headers(headers).send(buf);
     } else {
@@ -682,29 +732,93 @@ async function governedChatCompletions(
       );
     }
 
+    // Map a hold outcome to the bytes the client receives: the original
+    // response on APPROVED, a synthetic denial (no tool call) otherwise.
+    const finalBody = (decision: HoldOutcome): Buffer =>
+      decision === "APPROVED"
+        ? result.body
+        : syntheticDenial(result.body, decision === "DENIED" ? "denied" : "timeout");
+
+    // A streaming client is waiting on an open socket; buffering upstream plus
+    // the hold window can outlast its first-byte / idle timeout. Take over the
+    // socket, keep it warm with SSE comments during the hold, then write the
+    // reconstructed frames. EXPIRED_CLIENT writes are guarded no-ops.
+    if (wantsStream) {
+      await streamHeldOutcome(
+        reply,
+        outcome,
+        (decision) => {
+          req.log.info(
+            { hold_id: id, outcome: decision, latency_ms: Date.now() - started },
+            "hold completed"
+          );
+          return finalBody(decision);
+        },
+        includeUsage
+      );
+      return;
+    }
+
     const decision = await outcome;
     req.log.info({ hold_id: id, outcome: decision, latency_ms: Date.now() - started }, "hold completed");
-
-    switch (decision) {
-      case "APPROVED":
-        sendFinal(result.status, result.headers, result.body);
-        return;
-      case "DENIED":
-        sendFinal(200, undefined, syntheticDenial(result.body, "denied"));
-        return;
-      case "EXPIRED_TIMEOUT":
-        sendFinal(200, undefined, syntheticDenial(result.body, "timeout"));
-        return;
-      case "EXPIRED_CLIENT":
-        // Connection is (almost certainly) gone — a best-effort denial is a
-        // no-op on a dead socket, and saves the agent if it is somehow alive.
-        sendFinal(200, undefined, syntheticDenial(result.body, "timeout"));
-        return;
+    // EXPIRED_CLIENT: the connection is (almost certainly) gone — a best-effort
+    // denial is a no-op on a dead socket, and saves the agent if it is alive.
+    if (decision === "APPROVED") {
+      sendFinal(result.status, result.headers, finalBody(decision));
+    } else {
+      sendFinal(200, undefined, finalBody(decision));
     }
+    return;
   }
 
   if (calls.length > 0) auditDecisions();
   sendFinal(result.status, result.headers, result.body);
+}
+
+/**
+ * Stream a held response to a client that asked for `stream: true`. Fastify's
+ * buffered reply can't emit bytes mid-hold, so we take over the raw socket
+ * (reply.hijack), send SSE headers immediately, and write a keep-alive comment
+ * every 15s so the client's first-byte / idle timers don't fire during the
+ * approval window. Once the operator decides we write the reconstructed final
+ * frames. Every write is guarded: if the client already hung up
+ * (EXPIRED_CLIENT) the writes are no-ops on a dead socket.
+ */
+async function streamHeldOutcome(
+  reply: FastifyReply,
+  outcome: Promise<HoldOutcome>,
+  finalBody: (decision: HoldOutcome) => Buffer,
+  includeUsage: boolean
+): Promise<void> {
+  reply.hijack();
+  const raw = reply.raw;
+  const alive = (): boolean => !raw.writableEnded && !raw.destroyed;
+
+  if (alive()) {
+    raw.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    });
+    raw.write(": phinq awaiting operator decision\n\n");
+  }
+
+  const heartbeat = setInterval(() => {
+    if (alive()) raw.write(": keep-alive\n\n");
+  }, 15_000);
+  heartbeat.unref();
+
+  let decision: HoldOutcome;
+  try {
+    decision = await outcome;
+  } finally {
+    clearInterval(heartbeat);
+  }
+
+  if (alive()) {
+    raw.write(chatCompletionToSSE(finalBody(decision), { includeUsage }));
+    raw.end();
+  }
 }
 
 /**

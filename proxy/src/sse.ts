@@ -11,46 +11,65 @@
  * whole picture. Approvals and denials stream out through the same path.
  *
  * This is a faithful-enough reconstruction, not a byte-for-byte replay of the
- * upstream's own SSE: role delta first, then content, then any tool_calls,
- * then a terminal chunk carrying finish_reason, then `[DONE]`. Standard
- * OpenAI-compatible clients reassemble it exactly as they would a real stream.
+ * upstream's own SSE: role delta first, then a delta carrying content and any
+ * provider extras, then any tool_calls, then a terminal chunk carrying
+ * finish_reason, then `[DONE]`. Standard OpenAI-compatible clients reassemble
+ * it exactly as they would a real stream.
  */
-
-/** Return a request body with streaming forced off (upstream must send full JSON). */
-export function coerceNonStream(body: Buffer): Buffer {
-  try {
-    const obj = JSON.parse(body.toString("utf8"));
-    if (obj && typeof obj === "object") {
-      obj.stream = false;
-      // include_usage only makes sense on a real stream; drop it so the
-      // upstream returns a normal completion with a usage block.
-      delete obj.stream_options;
-      return Buffer.from(JSON.stringify(obj));
-    }
-  } catch {
-    /* fall through: unparseable bodies forward unchanged */
-  }
-  return body;
-}
 
 function frame(obj: unknown): string {
   return `data: ${JSON.stringify(obj)}\n\n`;
 }
 
 /**
- * Convert a full chat.completion JSON body into an OpenAI-style SSE stream.
- * Non-JSON (e.g. an upstream error already shaped for the client) is emitted
- * as a single data frame so nothing is silently swallowed.
+ * Everything on a chat message that belongs in a streamed delta but isn't
+ * handled structurally (role, tool_calls): `content` plus provider-specific
+ * fields the non-stream body may carry — `function_call` (legacy), `reasoning`
+ * / `reasoning_content` (OpenRouter), `refusal`, `annotations`, `logprobs`.
+ * Dropping these silently loses tokens the same request returns with
+ * stream:false, so they ride through verbatim.
  */
-export function chatCompletionToSSE(body: Buffer | string): string {
+function messageDelta(msg: Record<string, unknown>): Record<string, unknown> {
+  const delta: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(msg)) {
+    if (k === "role" || k === "tool_calls") continue; // emitted separately
+    if (v === null || v === undefined) continue;
+    if (k === "content" && v === "") continue; // empty content adds nothing
+    delta[k] = v;
+  }
+  return delta;
+}
+
+/**
+ * Convert a full chat.completion JSON body into an OpenAI-style SSE stream.
+ * `includeUsage` gates the trailing usage-only chunk to clients that asked for
+ * it (stream_options.include_usage); without it that chunk carries an empty
+ * `choices` array that crashes clients which index choices[0] on every chunk.
+ */
+export function chatCompletionToSSE(
+  body: Buffer | string,
+  opts: { includeUsage?: boolean } = {}
+): string {
   const text = typeof body === "string" ? body : body.toString("utf8");
   let obj: Record<string, unknown>;
   try {
     obj = JSON.parse(text) as Record<string, unknown>;
   } catch {
-    // Not JSON (e.g. a raw upstream error) — pass the bytes through verbatim
-    // in a single frame rather than silently dropping them.
-    return `data: ${text}\n\ndata: [DONE]\n\n`;
+    // Not JSON (a raw upstream error or gateway page). Preserve it verbatim as
+    // one SSE event: prefix every physical line with `data:` so embedded
+    // newlines don't break framing or inject spurious events.
+    const payload = text
+      .split(/\r?\n/)
+      .map((line) => `data: ${line}`)
+      .join("\n");
+    return `${payload}\n\ndata: [DONE]\n\n`;
+  }
+
+  // Some OpenAI-compatible upstreams (OpenRouter) return provider failures as
+  // HTTP 200 with an `{ error }` body and no choices. Surface it as an error
+  // frame rather than fabricating a successful empty turn the client acts on.
+  if (!Array.isArray(obj.choices) && obj.error !== undefined) {
+    return `${frame({ error: obj.error })}data: [DONE]\n\n`;
   }
 
   const base = {
@@ -69,8 +88,11 @@ export function chatCompletionToSSE(body: Buffer | string): string {
 
     frames.push(frame({ ...base, choices: [{ index: idx, delta: { role: msg.role ?? "assistant" }, finish_reason: null }] }));
 
-    if (typeof msg.content === "string" && msg.content.length > 0) {
-      frames.push(frame({ ...base, choices: [{ index: idx, delta: { content: msg.content }, finish_reason: null }] }));
+    // One delta carrying content and any provider extras the buffered response
+    // held, so the reconstruction loses nothing stream:false would have kept.
+    const delta = messageDelta(msg);
+    if (Object.keys(delta).length > 0) {
+      frames.push(frame({ ...base, choices: [{ index: idx, delta, finish_reason: null }] }));
     }
 
     if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
@@ -93,8 +115,9 @@ export function chatCompletionToSSE(body: Buffer | string): string {
     frames.push(frame({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }));
   }
 
-  // A final usage-bearing chunk mirrors OpenAI's `stream_options.include_usage`.
-  if (obj.usage) {
+  // A trailing usage chunk (choices: []) is only part of the OpenAI streaming
+  // contract when the client opted in via stream_options.include_usage.
+  if (opts.includeUsage && obj.usage) {
     frames.push(frame({ ...base, choices: [], usage: obj.usage }));
   }
 

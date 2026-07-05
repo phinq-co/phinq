@@ -112,7 +112,14 @@ test("editing the phinq-governance skill definition holds as DISABLE_SAFEGUARDS"
 });
 
 test("touching phinq policy/state files (env, holds db, .phinq dir) holds", () => {
-  for (const path of ["/root/.phinq/phinq.env", "~/.phinq/holds.db", "phinq-session.db"]) {
+  for (const path of [
+    "/root/.phinq/phinq.env",
+    "~/.phinq/holds.db",
+    "phinq-session.db",
+    // Windows separators must trip the same guard as POSIX ones.
+    "C:\\Users\\me\\.phinq\\holds.db",
+    "del C:\\Users\\me\\.phinq\\instance.json",
+  ]) {
     const c = classify("write_file", { path, content: "x" });
     assert.equal(c.decision, "HOLD", `${path} should hold`);
     assert.ok(c.triggers.includes("DISABLE_SAFEGUARDS"), `${path} should trip DISABLE_SAFEGUARDS`);

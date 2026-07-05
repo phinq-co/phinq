@@ -243,7 +243,7 @@ const SHELL_PATTERNS: { pattern: RegExp; finding: ArgFinding }[] = [
  * every argument string, so a tool arg like {"name":"phinq-governance"} counts.
  */
 const SAFEGUARD_PATHS =
-  /phinq\.ya?ml|phinq\.env|phinq[-_]config|phinq[-_]toolcalls|phinq[-_]?audit|audit.*\.jsonl|phinq[-_]holds|phinq[-_]session|phinq[-_]governance|(^|[\s/"'=([])\.phinq(?=[/\\"'\s)\]]|$)/i;
+  /phinq\.ya?ml|phinq\.env|phinq[-_]config|phinq[-_]toolcalls|phinq[-_]?audit|audit.*\.jsonl|phinq[-_]holds|phinq[-_]session|phinq[-_]governance|(^|[\s/\\"'=([])\.phinq(?=[/\\"'\s)\]]|$)/i;
 
 /** Argument keys that carry recipients for outbound communications. */
 const RECIPIENT_KEYS = ["to", "recipients", "emails", "cc", "bcc", "targets"];

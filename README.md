@@ -77,8 +77,16 @@ Then point your agent at it:
 
 ```yaml
 # Hermes config (~/.hermes/config.yaml)
+# Hermes's built-in openrouter provider ignores base_url — route through a
+# named provider, which honors it.
 model:
-  base_url: http://127.0.0.1:5100/api/v1   # was https://openrouter.ai/api/v1
+  provider: phinq
+providers:
+  phinq:
+    name: phinq
+    base_url: http://127.0.0.1:5100/api/v1   # was https://openrouter.ai/api/v1
+    key_env: OPENROUTER_API_KEY
+    api_mode: chat_completions
 ```
 
 Your existing API key flows through the `Authorization` header — the proxy never stores or logs it.

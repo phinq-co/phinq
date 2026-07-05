@@ -237,6 +237,80 @@ test("gemini HOLD is enforced: deny yields a Gemini-shaped denial with no functi
   assert.ok(!res.body.includes("functionCall"), "denial must carry no executable call");
 });
 
+/** Poll the enforce app's hold store until a hold appears (or give up). */
+async function firstPendingHold(): Promise<{
+  id: string;
+  holds: { decide(id: string, d: string, by: string): unknown };
+}> {
+  const holds = (
+    enforceApp as unknown as {
+      phinq: { holds: { listPending(): { id: string }[]; decide(id: string, d: string, by: string): unknown } };
+    }
+  ).phinq.holds;
+  for (let i = 0; i < 100; i++) {
+    const id = holds.listPending()[0]?.id;
+    if (id) return { id, holds };
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error("hold never appeared");
+}
+
+test("/v1beta/openai/chat/completions is governed on the Gemini upstream (not a silent bypass)", async () => {
+  // Google's OpenAI-compat surface returns OpenAI-shaped tool calls; a
+  // dangerous one must be held, not relayed through untouched.
+  nextBody = JSON.stringify({
+    id: "cmpl-compat",
+    model: "gemini-2.5-flash",
+    choices: [
+      {
+        index: 0,
+        finish_reason: "tool_calls",
+        message: {
+          role: "assistant",
+          tool_calls: [
+            { id: "c1", type: "function", function: { name: "shell_exec", arguments: '{"cmd":"sudo rm -rf /"}' } },
+          ],
+        },
+      },
+    ],
+  });
+  const pending = enforceApp.inject({
+    method: "POST",
+    url: "/v1beta/openai/chat/completions",
+    headers: { "content-type": "application/json", authorization: "Bearer AIzaTest" },
+    payload: JSON.stringify({ model: "gemini-2.5-flash", messages: [] }),
+  });
+
+  const { id, holds } = await firstPendingHold();
+  assert.equal(lastUrl, "/v1beta/openai/chat/completions", "compat request must reach the Gemini upstream verbatim");
+  holds.decide(id, "deny", "test:operator");
+
+  const res = await pending;
+  const body = JSON.parse(res.body);
+  assert.equal(body.choices[0].finish_reason, "stop");
+  assert.ok(!("tool_calls" in body.choices[0].message), "denied compat call carries no executable tool call");
+});
+
+test("api_version 'v1' generateContent is governed as Gemini, not misrouted to the default upstream", async () => {
+  nextBody = JSON.stringify(GEMINI_RESPONSE); // rm -rf → HOLD
+  const pending = enforceApp.inject({
+    method: "POST",
+    url: "/v1/models/gemini-2.5-flash:generateContent",
+    headers: { "content-type": "application/json", "x-goog-api-key": "AIzaTest" },
+    payload: JSON.stringify({ contents: [] }),
+  });
+
+  const { id, holds } = await firstPendingHold();
+  // Governed Gemini preserves the path; a misroute into the /v1/* OpenAI
+  // catch-all would have normalized it to /api/v1/....
+  assert.equal(lastUrl, "/v1/models/gemini-2.5-flash:generateContent");
+  holds.decide(id, "deny", "test:operator");
+
+  const res = await pending;
+  const body = JSON.parse(res.body);
+  assert.match(body.candidates[0].content.parts[0].text, /withheld by Phinq/);
+});
+
 test("POST /phinq/classify is a pure advisory lookup", async () => {
   const res = await shadowApp.inject({
     method: "POST",
@@ -327,4 +401,19 @@ test("gate rejects bodies without a name", async () => {
     payload: JSON.stringify({ arguments: {} }),
   });
   assert.equal(res.statusCode, 400);
+});
+
+test("gate rejects non-object JSON bodies with 400 (not a 500 crash)", async () => {
+  // JSON.parse accepts these; dereferencing them as an object would throw.
+  for (const payload of ["null", "42", '"hi"', "[1,2,3]"]) {
+    for (const url of ["/phinq/gate", "/phinq/classify"]) {
+      const res = await shadowApp.inject({
+        method: "POST",
+        url,
+        headers: { "content-type": "application/json" },
+        payload,
+      });
+      assert.equal(res.statusCode, 400, `${url} with ${payload} must be 400`);
+    }
+  }
 });

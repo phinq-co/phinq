@@ -201,7 +201,7 @@ _SHELL_PATTERNS: list[tuple[re.Pattern[str], _ArgFinding]] = [
 _SAFEGUARD_PATHS = re.compile(
     r"phinq\.ya?ml|phinq\.env|phinq[-_]config|phinq[-_]toolcalls|phinq[-_]?audit"
     r"|audit.*\.jsonl|phinq[-_]holds|phinq[-_]session|phinq[-_]governance"
-    r"|(^|[\s/\"'=([])\.phinq(?=[/\\\"'\s)\]]|$)",
+    r"|(^|[\s/\\\"'=([])\.phinq(?=[/\\\"'\s)\]]|$)",
     re.I,
 )
 

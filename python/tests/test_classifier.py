@@ -82,6 +82,14 @@ def test_touching_phinq_governance_files_holds_as_disable_safeguards():
     assert "DISABLE_SAFEGUARDS" in c.triggers
 
 
+def test_windows_backslash_phinq_paths_hold_as_disable_safeguards():
+    # Windows separators must trip the same guard as POSIX ones.
+    for path in (r"C:\Users\me\.phinq\holds.db", r"del C:\Users\me\.phinq\instance.json"):
+        c = classify("write_file", {"path": path, "content": "x"})
+        assert c.decision == "HOLD", f"{path} should hold"
+        assert "DISABLE_SAFEGUARDS" in c.triggers, f"{path} should trip DISABLE_SAFEGUARDS"
+
+
 def test_single_delete_medium_bulk_delete_trips_trigger():
     single = classify("delete_file", {"path": "old.md"})
     assert single.action_class == AgentActionClass.IRREVERSIBLE_MEDIUM

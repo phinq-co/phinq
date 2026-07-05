@@ -84,37 +84,48 @@ test("path normalization", () => {
 });
 
 test("stream:true fetches non-streamed upstream and re-streams the governed result as SSE", async () => {
-  nextResponse = {
-    status: 200,
-    body: JSON.stringify({
-      id: "gen-stream-1",
-      model: "openai/gpt-4o-mini",
-      choices: [{ index: 0, message: { role: "assistant", content: "hello there" }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
-    }),
-  };
+  // Both base-URL prefixes an OpenAI SDK / Hermes can produce must stream.
+  for (const url of ["/v1/chat/completions", "/api/v1/chat/completions"]) {
+    nextResponse = {
+      status: 200,
+      body: JSON.stringify({
+        id: "gen-stream-1",
+        model: "openai/gpt-4o-mini",
+        choices: [{ index: 0, message: { role: "assistant", content: "hello there" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+      }),
+    };
 
-  const res = await app.inject({
-    method: "POST",
-    url: "/api/v1/chat/completions",
-    headers: { "content-type": "application/json", authorization: "Bearer sk-stream" },
-    payload: JSON.stringify({ model: "openai/gpt-4o-mini", stream: true, messages: [{ role: "user", content: "hi" }] }),
-  });
+    const res = await app.inject({
+      method: "POST",
+      url,
+      headers: { "content-type": "application/json", authorization: "Bearer sk-stream" },
+      payload: JSON.stringify({
+        model: "openai/gpt-4o-mini",
+        stream: true,
+        stream_options: { include_usage: true },
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    });
 
-  assert.equal(res.statusCode, 200);
-  assert.match(res.headers["content-type"] as string, /text\/event-stream/);
-  // Upstream must have been asked for a NON-streamed completion.
-  assert.equal(JSON.parse(lastRequest!.body.toString()).stream, false, "upstream must receive stream:false");
-  // Client receives SSE frames terminated by [DONE], reconstructing the content.
-  assert.ok(res.body.includes("data: "), "must emit SSE data frames");
-  assert.ok(res.body.trimEnd().endsWith("data: [DONE]"), "must terminate with [DONE]");
-  const reconstructed = res.body
-    .split("\n")
-    .filter((l) => l.startsWith("data: ") && !l.includes("[DONE]"))
-    .map((l) => JSON.parse(l.slice(6)))
-    .map((c) => c.choices?.[0]?.delta?.content ?? "")
-    .join("");
-  assert.equal(reconstructed, "hello there", "content must survive the round-trip");
+    assert.equal(res.statusCode, 200, `${url} streams`);
+    assert.match(res.headers["content-type"] as string, /text\/event-stream/);
+    // Upstream must have been asked for a NON-streamed completion with no
+    // stream_options (which only makes sense on a real stream).
+    const forwarded = JSON.parse(lastRequest!.body.toString());
+    assert.equal(forwarded.stream, false, `${url}: upstream must receive stream:false`);
+    assert.equal(forwarded.stream_options, undefined, `${url}: stream_options must be dropped`);
+    // Client receives SSE frames terminated by [DONE], reconstructing the content.
+    assert.ok(res.body.includes("data: "), "must emit SSE data frames");
+    assert.ok(res.body.trimEnd().endsWith("data: [DONE]"), "must terminate with [DONE]");
+    const reconstructed = res.body
+      .split("\n")
+      .filter((l) => l.startsWith("data: ") && !l.includes("[DONE]"))
+      .map((l) => JSON.parse(l.slice(6)))
+      .map((c) => c.choices?.[0]?.delta?.content ?? "")
+      .join("");
+    assert.equal(reconstructed, "hello there", `${url}: content must survive the round-trip`);
+  }
 });
 
 test("stream:false chat completion forwards byte-identical and returns upstream verbatim", async () => {

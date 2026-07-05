@@ -102,6 +102,19 @@ function realGovernedPost(): Promise<{ status: number; body: string }> {
   }).then(async (r) => ({ status: r.status, body: await r.text() }));
 }
 
+/** Same, but asks the proxy to stream — exercises the SSE keep-alive hold path. */
+function realGovernedStreamPost(): Promise<{ status: number; contentType: string; body: string }> {
+  return fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer sk-local-stream" },
+    body: JSON.stringify({ model: "test-model", stream: true, messages: [] }),
+  }).then(async (r) => ({
+    status: r.status,
+    contentType: r.headers.get("content-type") ?? "",
+    body: await r.text(),
+  }));
+}
+
 async function waitForHold(): Promise<string> {
   for (let i = 0; i < 80; i++) {
     const holds = (await ctl("/phinq/holds", "GET", secret())).json().holds;
@@ -139,6 +152,46 @@ test("deny returns a synthetic denial with no tool_calls", async () => {
   assert.equal(body.choices[0].finish_reason, "stop");
   assert.ok(!("tool_calls" in body.choices[0].message));
   assert.match(body.choices[0].message.content, /denied by the operator/);
+});
+
+test("streaming hold keeps the socket warm, then approve streams the reconstructed result", async () => {
+  upstreamBody = HELD;
+  const pending = realGovernedStreamPost();
+  const id = await waitForHold();
+  await ctl(`/phinq/holds/${id}/approve`, "POST", secret());
+
+  const res = await pending;
+  assert.equal(res.status, 200);
+  assert.match(res.contentType, /text\/event-stream/, "streaming hold must answer as SSE");
+  // A keep-alive comment is sent up front so the client's idle timer holds.
+  assert.ok(res.body.includes(": phinq awaiting operator decision"), "keep-alive preamble missing");
+  assert.ok(res.body.trimEnd().endsWith("data: [DONE]"));
+  // The approved tool call is reconstructed into the stream.
+  const toolNames = res.body
+    .split("\n")
+    .filter((l) => l.startsWith("data: ") && !l.includes("[DONE]"))
+    .flatMap((l) => {
+      try {
+        return (JSON.parse(l.slice(6)).choices?.[0]?.delta?.tool_calls ?? []) as { function?: { name?: string } }[];
+      } catch {
+        return [];
+      }
+    })
+    .map((tc) => tc.function?.name);
+  assert.ok(toolNames.includes("shell_exec"), "approved streaming hold must carry the tool call");
+});
+
+test("streaming hold: deny streams a synthetic denial with no tool_calls", async () => {
+  upstreamBody = HELD;
+  const pending = realGovernedStreamPost();
+  const id = await waitForHold();
+  await ctl(`/phinq/holds/${id}/deny`, "POST", secret());
+
+  const res = await pending;
+  assert.match(res.contentType, /text\/event-stream/);
+  assert.ok(!res.body.includes("tool_calls"), "denied stream must carry no tool call");
+  assert.match(res.body, /denied by the operator/);
+  assert.ok(res.body.trimEnd().endsWith("data: [DONE]"));
 });
 
 test("deciding an unknown hold reports unknown", async () => {

@@ -68,15 +68,9 @@ export function extractGeminiToolCalls(
       } catch {
         args = undefined;
       }
-      let argsParseOk = false;
-      if (args !== undefined) {
-        try {
-          JSON.parse(args);
-          argsParseOk = true;
-        } catch {
-          argsParseOk = false;
-        }
-      }
+      // `args` is either undefined or the output of a successful JSON.stringify,
+      // which always round-trips — so parse-ok is exactly "did we serialize it".
+      const argsParseOk = args !== undefined;
 
       out.push({
         ts: new Date().toISOString(),
@@ -231,4 +225,15 @@ export function syntheticGeminiDenial(
 export function geminiModelFromUrl(url: string): string | undefined {
   const m = url.match(/\/models\/([^:/?]+):/);
   return m?.[1];
+}
+
+/**
+ * True for a Gemini generateContent / streamGenerateContent request path, on
+ * ANY API version prefix (/v1beta, /v1alpha, and the /v1 a google-genai client
+ * pinned to `api_version='v1'` uses). The colon-verb is unique to Gemini — no
+ * OpenAI/OpenRouter route carries one — so it safely distinguishes a Gemini
+ * call that landed on a version prefix shared with other dialects.
+ */
+export function isGeminiGenerateContent(url: string): boolean {
+  return /:(stream)?generatecontent/i.test(url.split("?")[0]);
 }
