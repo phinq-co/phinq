@@ -90,6 +90,37 @@ def test_windows_backslash_phinq_paths_hold_as_disable_safeguards():
         assert "DISABLE_SAFEGUARDS" in c.triggers, f"{path} should trip DISABLE_SAFEGUARDS"
 
 
+def test_reading_phinq_governance_files_does_not_hold():
+    # Read/write split: reading the governance layer is recon, not tampering.
+    # Fixtures are the actual dogfood calls false-held on the VPS.
+    reads = [
+        ("skill_view", {"name": "phinq-governance"}),
+        ("read_file", {"path": "/root/phinq/proxy/phinq-audit.jsonl"}),
+        ("search_files", {"pattern": "phinq.yaml", "path": "/root/phinq"}),
+    ]
+    for name, args in reads:
+        c = classify(name, args)
+        assert "DISABLE_SAFEGUARDS" not in c.triggers, f"{name} must not trip"
+        assert c.decision == "ALLOW", f"{name} read must ALLOW"
+
+
+def test_read_shell_on_phinq_files_allows_destructive_still_holds():
+    for command in (
+        'wc -l /root/phinq/proxy/phinq-toolcalls.jsonl 2>/dev/null || echo "MISS"',
+        "cat /root/phinq/proxy/phinq-toolcalls.jsonl | tail -20",
+        "cd /root/phinq/proxy && npm run replay -- phinq-toolcalls.jsonl phinq.yaml 2>&1",
+    ):
+        c = classify("terminal", {"command": command})
+        assert "DISABLE_SAFEGUARDS" not in c.triggers, f"read shell must not hold: {command}"
+    # Deleting the audit log must still hold (plain rm misses BULK_DELETE).
+    rm = classify("terminal", {"command": "rm /root/.hermes/phinq-audit/audit.jsonl"})
+    assert "DISABLE_SAFEGUARDS" in rm.triggers
+    redir = classify("terminal", {"command": 'echo "x" > /root/phinq/proxy/phinq.yaml'})
+    assert "DISABLE_SAFEGUARDS" in redir.triggers
+    sed = classify("terminal", {"command": "sed -i 's/HOLD/ALLOW/' /root/phinq/proxy/phinq.yaml"})
+    assert "DISABLE_SAFEGUARDS" in sed.triggers
+
+
 def test_single_delete_medium_bulk_delete_trips_trigger():
     single = classify("delete_file", {"path": "old.md"})
     assert single.action_class == AgentActionClass.IRREVERSIBLE_MEDIUM

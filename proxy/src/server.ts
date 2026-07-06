@@ -29,7 +29,7 @@ import { CompositeNotifier, SlackNotifier, type HoldNotifier } from "./slack.js"
 import { AuditLog } from "./audit.js";
 import { timingSafeEqual } from "node:crypto";
 
-export const VERSION = "1.2.1";
+export const VERSION = "1.2.2";
 
 interface Governance {
   rules: PhinqRulesConfig["rules"];
@@ -305,6 +305,7 @@ export function buildServer(config: ProxyConfig): FastifyInstance {
           function_name: c.function_name,
           action_class: c.action_class,
           triggers: c.triggers ?? [],
+          reasons: c.reasons ?? [],
           arguments: c.arguments,
         })),
       })),

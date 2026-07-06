@@ -87,7 +87,9 @@ function printHolds(holds: any[]): void {
     for (const c of h.calls) {
       const trig = c.triggers.length ? `  ⚠ ${c.triggers.join(", ")}` : "";
       const args = (c.arguments ?? "").replace(/\s+/g, " ").slice(0, 160);
+      const why = c.reasons?.length ? c.reasons[c.reasons.length - 1] : undefined;
       console.log(`    ${c.function_name ?? "?"} [${c.action_class ?? "?"}]${trig}`);
+      if (why) console.log(`      why: ${why}`);
       if (args) console.log(`      ${args}`);
     }
     console.log(`    → phinq approve ${h.id}   |   phinq deny ${h.id}`);

@@ -245,6 +245,21 @@ const SHELL_PATTERNS: { pattern: RegExp; finding: ArgFinding }[] = [
 const SAFEGUARD_PATHS =
   /phinq\.ya?ml|phinq\.env|phinq[-_]config|phinq[-_]toolcalls|phinq[-_]?audit|audit.*\.jsonl|phinq[-_]holds|phinq[-_]session|phinq[-_]governance|(^|[\s/\\"'=([])\.phinq(?=[/\\"'\s)\]]|$)/i;
 
+// Reading the governance layer is recon, not tampering; only *mutating* it is
+// held. These split a call that references a governance path into read vs write.
+// Verbs are matched anywhere in the tool name so Hermes-style names work
+// (skill_view, memory_get). A name carrying BOTH a read and a write verb is
+// treated as a write (a mutation that happens to read first).
+const SAFEGUARD_READ_NAME =
+  /(^|[_\W])(read|view|search|list|get|fetch|query|describe|stat|browse|find|check|inspect|show|preview|open|cat|grep|head|tail|ls|wc)([_\W]|$)/i;
+const SAFEGUARD_WRITE_NAME =
+  /(^|[_\W])(write|edit|patch|delete|remove|rm|update|create|manage|set|apply|move|rename|append|save|replace|insert|upload|modify|put|post|truncate|drop)([_\W]|$)/i;
+// A shell command that MUTATES a path: a destructive command token, an in-place
+// sed, or a real `>`/`>>` redirect. The `(?<![\d&])` guard excludes fd
+// redirects (`2>/dev/null`, `2>&1`) so read commands that discard stderr pass.
+const SHELL_MUTATES_SAFEGUARD =
+  /(^|[\s;&|(])(rm|rmdir|unlink|shred|mv|dd|truncate|tee|install|chmod|chown|ln|cp)(\s|$)|(^|[\s;&|(])sed\s+-[a-z]*i|(?<![\d&])>>?\s*[^\s&]/i;
+
 /** Argument keys that carry recipients for outbound communications. */
 const RECIPIENT_KEYS = ["to", "recipients", "emails", "cc", "bcc", "targets"];
 
@@ -347,9 +362,22 @@ export function classifyToolCall(
     }
 
     if (SAFEGUARD_PATHS.test(joined)) {
-      cls = AgentActionClass.IRREVERSIBLE_HIGH;
-      triggers.add("DISABLE_SAFEGUARDS");
-      reasons.push("arguments reference Phinq governance files");
+      // Only a mutation of the governance layer is held. Writes/edits/deletes
+      // and destructive shell commands escalate; a pure read (read_file,
+      // skill_view, search, `cat`/`ls`/`wc`, `npm run replay`) passes. This is
+      // structural — deliberately NOT relaxable via phinq.yaml.
+      const nameLooksRead =
+        SAFEGUARD_READ_NAME.test(name) && !SAFEGUARD_WRITE_NAME.test(name);
+      const mutatesSafeguard = isShell
+        ? SHELL_MUTATES_SAFEGUARD.test(joined)
+        : isDelete || !nameLooksRead;
+      if (mutatesSafeguard) {
+        cls = AgentActionClass.IRREVERSIBLE_HIGH;
+        triggers.add("DISABLE_SAFEGUARDS");
+        reasons.push("arguments modify Phinq governance files");
+      } else {
+        reasons.push("read-only access to Phinq governance files");
+      }
     }
 
     if (isSend) {

@@ -132,6 +132,53 @@ test("unrelated names containing 'phinq' as a substring do not false-trip", () =
   assert.ok(!c.triggers.includes("DISABLE_SAFEGUARDS"));
 });
 
+// Read/write split: reading the governance layer is recon, not tampering, so it
+// must not hold — only mutations do. Fixtures are the actual dogfood calls that
+// were false-held on the VPS (skill_view, read_file, search, terminal reads).
+test("READING phinq governance files does NOT hold (was a false positive)", () => {
+  const reads: [string, Record<string, unknown>][] = [
+    ["skill_view", { name: "phinq-governance" }],
+    ["skill_view", { file_path: "references/triggers.md", name: "phinq-governance" }],
+    ["read_file", { path: "/root/phinq/proxy/phinq-audit.jsonl" }],
+    ["search_files", { pattern: "phinq.yaml", path: "/root/phinq", file_glob: "*.{yaml,yml}" }],
+    ["skills_list", { filter: "phinq" }],
+  ];
+  for (const [name, args] of reads) {
+    const c = classify(name, args);
+    assert.ok(
+      !c.triggers.includes("DISABLE_SAFEGUARDS"),
+      `${name} ${JSON.stringify(args)} must NOT trip DISABLE_SAFEGUARDS`
+    );
+    assert.equal(c.decision, "ALLOW", `${name} read must ALLOW`);
+  }
+});
+
+test("read-only SHELL commands on phinq files do NOT hold; destructive ones still do", () => {
+  const readShells = [
+    'wc -l /root/phinq/proxy/phinq-toolcalls.jsonl 2>/dev/null || echo "MISS"',
+    "ls -la /root/phinq/proxy/phinq-toolcalls.jsonl",
+    "cat /root/phinq/proxy/phinq-toolcalls.jsonl | tail -20",
+    "cd /root/phinq/proxy && npm run replay -- phinq-toolcalls.jsonl phinq.yaml 2>&1",
+  ];
+  for (const command of readShells) {
+    const c = classify("terminal", { command });
+    assert.ok(
+      !c.triggers.includes("DISABLE_SAFEGUARDS"),
+      `read shell must NOT hold: ${command}`
+    );
+  }
+  // The canonical attack — deleting the audit log — must still hold, even
+  // though plain `rm` (no -rf) misses the BULK_DELETE shell pattern.
+  const rm = classify("terminal", { command: "rm /root/.hermes/phinq-audit/audit.jsonl" });
+  assert.ok(rm.triggers.includes("DISABLE_SAFEGUARDS"), "rm of audit log must hold");
+  // A redirect that overwrites the policy must hold.
+  const redir = classify("terminal", { command: 'echo "thresholds: {}" > /root/phinq/proxy/phinq.yaml' });
+  assert.ok(redir.triggers.includes("DISABLE_SAFEGUARDS"), "redirect overwrite of phinq.yaml must hold");
+  // In-place edit of a governance file must hold.
+  const sed = classify("terminal", { command: "sed -i 's/HOLD/ALLOW/' /root/phinq/proxy/phinq.yaml" });
+  assert.ok(sed.triggers.includes("DISABLE_SAFEGUARDS"), "sed -i of phinq.yaml must hold");
+});
+
 test("single delete is MEDIUM/HOLD; bulk single-call delete trips BULK_DELETE", () => {
   const single = classify("delete_file", { path: "old.md" });
   assert.equal(single.action_class, AgentActionClass.IRREVERSIBLE_MEDIUM);

@@ -73,7 +73,13 @@ export class TelegramNotifier {
       ...hold.calls.flatMap((c, i) => {
         const triggers = c.triggers?.length ? `  ⚠ ${c.triggers.join(", ")}` : "";
         const args = (c.arguments ?? "").replace(/\s+/g, " ").slice(0, 200);
-        return [`${i + 1}. ${c.function_name ?? "?"} [${c.action_class ?? "?"}]${triggers}`, `   ${args}`];
+        // Plain-English "why" so the operator can decide without decoding the
+        // trigger code. Show the most specific reason (the last rule to fire).
+        const why = c.reasons?.length ? c.reasons[c.reasons.length - 1] : undefined;
+        const line = [`${i + 1}. ${c.function_name ?? "?"} [${c.action_class ?? "?"}]${triggers}`];
+        if (why) line.push(`   why: ${why}`);
+        line.push(`   ${args}`);
+        return line;
       }),
       "",
       `model: ${hold.model ?? "?"}`,

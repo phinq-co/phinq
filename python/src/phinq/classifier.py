@@ -205,6 +205,29 @@ _SAFEGUARD_PATHS = re.compile(
     re.I,
 )
 
+# Reading the governance layer is recon, not tampering; only *mutating* it is
+# held. Verbs are matched anywhere in the tool name (Hermes-style skill_view).
+# A name with BOTH a read and a write verb is treated as a write. Kept
+# byte-equivalent to the TypeScript detectors.
+_SAFEGUARD_READ_NAME = re.compile(
+    r"(^|[_\W])(read|view|search|list|get|fetch|query|describe|stat|browse|find"
+    r"|check|inspect|show|preview|open|cat|grep|head|tail|ls|wc)([_\W]|$)",
+    re.I,
+)
+_SAFEGUARD_WRITE_NAME = re.compile(
+    r"(^|[_\W])(write|edit|patch|delete|remove|rm|update|create|manage|set|apply"
+    r"|move|rename|append|save|replace|insert|upload|modify|put|post|truncate|drop)([_\W]|$)",
+    re.I,
+)
+# A shell command that MUTATES a path: destructive command token, in-place sed,
+# or a real >/>> redirect. (?<![\d&]) excludes fd redirects (2>/dev/null, 2>&1).
+_SHELL_MUTATES_SAFEGUARD = re.compile(
+    r"(^|[\s;&|(])(rm|rmdir|unlink|shred|mv|dd|truncate|tee|install|chmod|chown|ln|cp)(\s|$)"
+    r"|(^|[\s;&|(])sed\s+-[a-z]*i"
+    r"|(?<![\d&])>>?\s*[^\s&]",
+    re.I,
+)
+
 # Argument keys that carry recipients for outbound communications.
 _RECIPIENT_KEYS = ["to", "recipients", "emails", "cc", "bcc", "targets"]
 
@@ -317,9 +340,21 @@ def classify_tool_call(
                     reasons.append(finding.reason)
 
         if _SAFEGUARD_PATHS.search(joined):
-            cls = AgentActionClass.IRREVERSIBLE_HIGH
-            add_trigger("DISABLE_SAFEGUARDS")
-            reasons.append("arguments reference Phinq governance files")
+            # Only a mutation of the governance layer is held. Writes/edits/
+            # deletes and destructive shell commands escalate; a pure read
+            # (read_file, skill_view, search, cat/ls/wc, `npm run replay`)
+            # passes. Structural — deliberately NOT relaxable via phinq.yaml.
+            name_looks_read = bool(_SAFEGUARD_READ_NAME.search(name)) and not _SAFEGUARD_WRITE_NAME.search(name)
+            if is_shell:
+                mutates_safeguard = bool(_SHELL_MUTATES_SAFEGUARD.search(joined))
+            else:
+                mutates_safeguard = is_delete or not name_looks_read
+            if mutates_safeguard:
+                cls = AgentActionClass.IRREVERSIBLE_HIGH
+                add_trigger("DISABLE_SAFEGUARDS")
+                reasons.append("arguments modify Phinq governance files")
+            else:
+                reasons.append("read-only access to Phinq governance files")
 
         if is_send:
             recipients = _count_recipients(args)
