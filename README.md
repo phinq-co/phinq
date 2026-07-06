@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"/></a>
-  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node.js"/></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg" alt="Node.js"/></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg" alt="TypeScript"/></a>
   <a href="https://github.com/phinq-co/phinq"><img src="https://img.shields.io/github/stars/phinq-co/phinq" alt="GitHub Stars"/></a>
   <a href="https://github.com/phinq-co/phinq/actions"><img src="https://img.shields.io/github/actions/workflow/status/phinq-co/phinq/ci.yml" alt="CI Status"/></a>
@@ -195,7 +195,7 @@ Every tool call is classified into one of five levels:
 - `PERMISSION_ESCALATION` — sudo, chmod, IAM changes
 - `BILLING_MODIFICATION` — payment, subscription changes
 - `AFTER_ERROR_BULK` — bulk ops within 10 min of an error
-- `DISABLE_SAFEGUARDS` — modifying the governance layer itself
+- `DISABLE_SAFEGUARDS` — *modifying* the governance layer itself (config, audit chain, the phinq-governance skill). Reading it is allowed — recon isn't tampering
 - `TOKEN_BUDGET` — session token burn exceeds your budget (opt-in)
 
 Tune thresholds via `phinq.yaml`:
@@ -213,11 +213,11 @@ tools:
 
 ### Token regulation — the fuel gauge
 
-The proxy reads the `usage` block of every response (all three dialects) and keeps a rolling per-session token count. Set `session_token_budget` and a session that burns past it gets **checkpointed**: every subsequent tool call holds for approval until you wave it on — a runaway loop can't quietly spend all night. Usage is also written to the audit chain and totalled (per model) in `phinq report`. Off by default, so routine sessions never false-HOLD.
+The proxy reads the `usage` block of every response (all four dialects) and keeps a rolling per-session token count. Set `session_token_budget` and a session that burns past it gets **checkpointed**: every subsequent tool call holds for approval until you wave it on — a runaway loop can't quietly spend all night. Usage is also written to the audit chain and totalled (per model) in `phinq report`. Off by default, so routine sessions never false-HOLD.
 
 ## Audit log (tamper-evident)
 
-Every decision is appended to a hash-chained JSONL file. The first line is a genesis entry with a random `log_id`. Each subsequent entry carries `prev_hash` and `entry_hash = sha256(prev_hash + jcs(entry))`. Modify one byte and verification fails:
+Every decision is appended to a hash-chained JSONL file. The first line is a genesis entry with a random `log_id`. Each subsequent entry carries `prev_hash` and `entry_hash = sha256(prev_hash + jcs(entry))`. Modify one byte and verification fails. (Full field-by-field format, verification algorithm, and threat model: [PHINQ-AUDIT-LOG-SPEC.md](PHINQ-AUDIT-LOG-SPEC.md).)
 
 ```bash
 npm run audit:verify -- phinq-audit.jsonl
