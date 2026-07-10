@@ -25,3 +25,6 @@ sdk/src/classifier.ts
 __pycache__/
 *.pyc
 dist/
+
+# Test fixtures are checked in even though runtime *.jsonl logs are ignored
+!proxy/test/fixtures/*.jsonl
