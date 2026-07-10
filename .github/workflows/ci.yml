@@ -38,3 +38,19 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+
+  # Python engine + the cross-engine parity contract: both suites assert the
+  # same fixtures (proxy/test/fixtures/parity-*) so the TS and Python
+  # classifiers cannot drift without CI failing.
+  test-python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . pytest
+      - run: pytest -q

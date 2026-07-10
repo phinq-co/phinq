@@ -1,0 +1,245 @@
+{
+  "read-only": {
+    "decision": "ALLOW",
+    "action_class": "REVERSIBLE",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "workspace-write": {
+    "decision": "ALLOW",
+    "action_class": "REVERSIBLE",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "unknown-tool": {
+    "decision": "ALLOW",
+    "action_class": "IRREVERSIBLE_LOW",
+    "triggers": [],
+    "unknown_tool": true
+  },
+  "single-delete": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_MEDIUM",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "bulk-delete-args": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "BULK_DELETE"
+    ],
+    "unknown_tool": false
+  },
+  "bulk-delete-session": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "BULK_DELETE"
+    ],
+    "unknown_tool": false
+  },
+  "single-send": {
+    "decision": "ALLOW",
+    "action_class": "IRREVERSIBLE_LOW",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "multi-recipient-send": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_MEDIUM",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "volume-send-args": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "EXTERNAL_COMM_VOLUME"
+    ],
+    "unknown_tool": false
+  },
+  "volume-send-session": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "EXTERNAL_COMM_VOLUME"
+    ],
+    "unknown_tool": false
+  },
+  "after-error-bulk": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "AFTER_ERROR_BULK",
+      "BULK_DELETE"
+    ],
+    "unknown_tool": false
+  },
+  "credential-name": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "CREDENTIAL_ACCESS"
+    ],
+    "unknown_tool": false
+  },
+  "credential-shell-arg": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "CREDENTIAL_ACCESS"
+    ],
+    "unknown_tool": false
+  },
+  "billing-name": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "BILLING_MODIFICATION"
+    ],
+    "unknown_tool": false
+  },
+  "sudo-shell": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "PERMISSION_ESCALATION"
+    ],
+    "unknown_tool": false
+  },
+  "rm-rf-shell": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "BULK_DELETE"
+    ],
+    "unknown_tool": false
+  },
+  "curl-pipe-sh": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "PERMISSION_ESCALATION"
+    ],
+    "unknown_tool": false
+  },
+  "chmod-shell": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "PERMISSION_ESCALATION"
+    ],
+    "unknown_tool": false
+  },
+  "force-push": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_MEDIUM",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "risk-reducing": {
+    "decision": "ALLOW",
+    "action_class": "RISK_REDUCING",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "safeguard-read-skillview": {
+    "decision": "ALLOW",
+    "action_class": "IRREVERSIBLE_LOW",
+    "triggers": [],
+    "unknown_tool": true
+  },
+  "safeguard-read-readfile": {
+    "decision": "ALLOW",
+    "action_class": "REVERSIBLE",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "safeguard-read-shell-fd-redirect": {
+    "decision": "ALLOW",
+    "action_class": "REVERSIBLE",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "safeguard-read-shell-replay": {
+    "decision": "ALLOW",
+    "action_class": "REVERSIBLE",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "safeguard-write-skillmanage": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "DISABLE_SAFEGUARDS"
+    ],
+    "unknown_tool": true
+  },
+  "safeguard-rm-audit": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "DISABLE_SAFEGUARDS"
+    ],
+    "unknown_tool": false
+  },
+  "safeguard-redirect-overwrite": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "DISABLE_SAFEGUARDS"
+    ],
+    "unknown_tool": false
+  },
+  "safeguard-sed-inplace": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "DISABLE_SAFEGUARDS"
+    ],
+    "unknown_tool": false
+  },
+  "safeguard-windows-path": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "DISABLE_SAFEGUARDS"
+    ],
+    "unknown_tool": false
+  },
+  "safeguard-mixed-verbs-write-wins": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "DISABLE_SAFEGUARDS"
+    ],
+    "unknown_tool": false
+  },
+  "phinq-substring-negative": {
+    "decision": "ALLOW",
+    "action_class": "REVERSIBLE",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "unparseable-args": {
+    "decision": "ALLOW",
+    "action_class": "REVERSIBLE",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "no-args": {
+    "decision": "ALLOW",
+    "action_class": "REVERSIBLE",
+    "triggers": [],
+    "unknown_tool": false
+  },
+  "memory-write-mentions-governance": {
+    "decision": "HOLD",
+    "action_class": "IRREVERSIBLE_HIGH",
+    "triggers": [
+      "DISABLE_SAFEGUARDS"
+    ],
+    "unknown_tool": true
+  }
+}

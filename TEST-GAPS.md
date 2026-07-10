@@ -6,18 +6,16 @@ where the code lives, and the specific test to add.
 
 ## Priority 1 — would break silently, high blast radius
 
-### 1. TS ↔ Python classifier parity is enforced by discipline, not CI
+### 1. ~~TS ↔ Python classifier parity is enforced by discipline, not CI~~ ✅ CLOSED
 
-The two engines are kept "byte-equivalent" by hand-mirroring every change
-(`proxy/src/classifier.ts` ↔ `python/src/phinq/classifier.py`) and mirroring
-tests. Nothing *automatically* fails if they drift — this is the single most
-likely place for a contributor's change to break something invisibly.
-
-**Add:** a differential harness: a JSONL fixture of ~50 calls (name + args +
-session counts) checked into `proxy/test/fixtures/parity-corpus.jsonl`; a TS
-test and a Python test that each classify every fixture and compare against
-one shared `parity-expected.json` (decision, action_class, sorted triggers).
-Regenerating the expected file is a deliberate, review-visible act.
+Closed by the differential harness: `proxy/test/fixtures/parity-corpus.jsonl`
+(34 cases covering every classifier branch) + `parity-expected.json`
+(generated from the TS engine via `npm run parity:regen`), asserted by BOTH
+`proxy/test/parity.test.ts` and `python/tests/test_parity.py`, with a
+`test-python` CI job so drift fails the build. Workflow for an intentional
+classifier change: change TS → `npm run parity:regen` → mirror into Python →
+both suites green → the expected-file diff in the PR *is* the review surface.
+Never hand-edit the expected file to make Python pass.
 
 ### 2. `telegram.ts` has no dedicated test file
 

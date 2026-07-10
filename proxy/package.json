@@ -14,7 +14,8 @@
     "report": "tsx src/report.ts",
     "mcp": "tsx src/mcp-main.ts",
     "learn": "tsx src/learn.ts",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "parity:regen": "tsx test/gen-parity-expected.ts"
   },
   "license": "MIT",
   "dependencies": {
